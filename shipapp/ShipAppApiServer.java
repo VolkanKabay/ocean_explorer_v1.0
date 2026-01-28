@@ -487,7 +487,10 @@ public class ShipAppApiServer {
         }
         JSONObject absposJson = msg.optJSONObject("abspos");
         if (absposJson != null) {
-            this.currentAbsPos = Vec.fromJson(absposJson);
+            // abspos kommt als 2D-Vektor ("vec2") vom Ocean-Server.
+            // Erst in Vec2D parsen und dann nach Vec (z = 0) umwandeln.
+            Vec2D abs2d = Vec2D.fromJson(absposJson);
+            this.currentAbsPos = abs2d != null ? abs2d.asVec() : null;
         }
         System.out.printf("Ship erfolgreich gelauncht. ID=%s, Sektor=%s, Pos=%s%n",
                 shipId, currentSector, currentAbsPos);
@@ -510,7 +513,8 @@ public class ShipAppApiServer {
             currentDir = Vec2D.fromJson(dirJson);
         }
         if (absposJson != null) {
-            currentAbsPos = Vec.fromJson(absposJson);
+            Vec2D abs2d = Vec2D.fromJson(absposJson);
+            currentAbsPos = abs2d != null ? abs2d.asVec() : null;
         }
         System.out.printf("Neue Schiffsposition: Sektor=%s, Richtung=%s, Pos=%s%n",
                 currentSector, currentDir, currentAbsPos);
