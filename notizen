@@ -1,0 +1,2 @@
+
+java -cp ".;libs\json.jar" shipapp.ShipApp

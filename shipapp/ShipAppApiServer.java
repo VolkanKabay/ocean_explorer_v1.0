@@ -1,0 +1,764 @@
+package shipapp;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+import ocean.AppLauncher;
+import ocean.Course;
+import ocean.Rudder;
+import ocean.Route;
+import ocean.Vec;
+import ocean.Vec2D;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * HTTP-API für die ShipApp, damit das React-Frontend die bestehende
+ * Funktionalität steuern kann.
+ *
+ * Läuft als separater Prozess (main-Methode) und stellt Endpunkte unter
+ * http://localhost:8080/api/... bereit.
+ */
+public class ShipAppApiServer {
+
+    // Konfiguration – bei Bedarf anpassen
+    private static final String OCEAN_HOST = "localhost";
+    private static final int OCEAN_SHIP_PORT = 8150;
+    private static final int OCEAN_SUB_PORT = 8151;
+    private static final int SHIPAPP_SUB_SERVER_PORT = 6000;
+    private static final int HTTP_PORT = 8080;
+
+    // Verbindung Ocean-Server (Ship-Port)
+    private Socket shipSocket;
+    private BufferedReader shipIn;
+    private PrintWriter shipOut;
+
+    // Zustand Schiff
+    private String shipId;
+    private Vec2D currentSector;
+    private Vec2D currentDir;
+    private Vec currentAbsPos;
+
+    // Letzte Scan/Radar-Ergebnisse
+    private final Object scanLock = new Object();
+    private Integer lastScanDepth = null;
+    private Double lastScanStddev = null;
+
+    private final Object radarLock = new Object();
+    private JSONArray lastRadarEchos = null;
+
+    // Submarine-Server
+    private ServerSocket submarineServerSocket;
+    private final Map<String, SubmarineSession> submarineSessions = new HashMap<>();
+
+    public static void main(String[] args) throws Exception {
+        ShipAppApiServer server = new ShipAppApiServer();
+        server.start();
+    }
+
+    public void start() throws Exception {
+        // 1. Verbindung zum Ocean-Server
+        connectToOceanServer(OCEAN_HOST, OCEAN_SHIP_PORT);
+
+        // 2. Submarine-Server starten
+        startSubmarineServer(SHIPAPP_SUB_SERVER_PORT, OCEAN_HOST, OCEAN_SUB_PORT);
+
+        // 3. HTTP-Server starten
+        HttpServer httpServer = HttpServer.create(new InetSocketAddress(HTTP_PORT), 0);
+        httpServer.createContext("/api/state", new StateHandler());
+        httpServer.createContext("/api/launch", new LaunchHandler());
+        httpServer.createContext("/api/navigate", new NavigateHandler());
+        httpServer.createContext("/api/scan", new ScanHandler());
+        httpServer.createContext("/api/radar", new RadarHandler());
+        httpServer.createContext("/api/submarine/start", new SubStartHandler());
+        httpServer.createContext("/api/submarine/pilot", new SubPilotHandler());
+        httpServer.createContext("/api/submarine/kill", new SubKillHandler());
+        httpServer.createContext("/api/reset", new ResetHandler());
+        httpServer.createContext("/api", this::handleRoot);
+        httpServer.setExecutor(null);
+        httpServer.start();
+
+        System.out.println("ShipAppApiServer läuft auf http://localhost:" + HTTP_PORT + "/api");
+    }
+
+    // ------------------------------------------------------------
+    // HTTP Hilfsfunktionen
+    // ------------------------------------------------------------
+
+    private void handleRoot(HttpExchange exchange) throws IOException {
+        sendJson(exchange, 200, new JSONObject().put("status", "ok"));
+    }
+
+    private static String readBody(HttpExchange exchange) throws IOException {
+        try (var in = exchange.getRequestBody()) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private void sendJson(HttpExchange exchange, int statusCode, JSONObject body) throws IOException {
+        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
+        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+        exchange.sendResponseHeaders(statusCode, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
+    }
+
+    private void handleOptions(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+        exchange.sendResponseHeaders(204, -1);
+        exchange.close();
+    }
+
+    // ------------------------------------------------------------
+    // HTTP-Handler
+    // ------------------------------------------------------------
+
+    private class StateHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            JSONObject root = new JSONObject();
+            if (shipId != null) {
+                JSONObject ship = new JSONObject();
+                ship.put("id", shipId);
+                if (currentSector != null) {
+                    ship.put("sector", new JSONObject()
+                            .put("x", currentSector.getX())
+                            .put("y", currentSector.getY()));
+                }
+                if (currentDir != null) {
+                    ship.put("dir", new JSONObject()
+                            .put("x", currentDir.getX())
+                            .put("y", currentDir.getY()));
+                }
+                root.put("ship", ship);
+            } else {
+                root.put("ship", JSONObject.NULL);
+            }
+
+            JSONArray subs = new JSONArray();
+            synchronized (submarineSessions) {
+                for (SubmarineSession s : submarineSessions.values()) {
+                    subs.put(s.toJson());
+                }
+            }
+            root.put("submarines", subs);
+
+            sendJson(exchange, 200, root);
+        }
+    }
+
+    private class LaunchHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            String body = readBody(exchange);
+            JSONObject jo = body.isEmpty() ? new JSONObject() : new JSONObject(body);
+
+            String name = jo.optString("name", "Explorer1");
+            int x = jo.optInt("x", 0);
+            int y = jo.optInt("y", 0);
+            int dx = jo.optInt("dx", 0);
+            int dy = jo.optInt("dy", 1);
+
+            Vec2D sector = new Vec2D(x, y);
+            Vec2D dir = new Vec2D(dx, dy);
+
+            JSONObject cmd = new JSONObject();
+            cmd.put("cmd", "launch");
+            cmd.put("name", name);
+            cmd.put("typ", "ship");
+            cmd.put("sector", sector.toJson());
+            cmd.put("dir", dir.toJson());
+
+            sendToShip(cmd);
+
+            sendJson(exchange, 200, new JSONObject().put("status", "sent"));
+        }
+    }
+
+    private class NavigateHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            String body = readBody(exchange);
+            JSONObject jo = body.isEmpty() ? new JSONObject() : new JSONObject(body);
+
+            String rudderStr = jo.optString("rudder", Rudder.Center.name());
+            String courseStr = jo.optString("course", Course.Forward.name());
+            Rudder rudder = Rudder.valueOf(rudderStr);
+            Course course = Course.valueOf(courseStr);
+
+            JSONObject cmd = new JSONObject();
+            cmd.put("cmd", "navigate");
+            cmd.put("rudder", rudder.name());
+            cmd.put("course", course.name());
+            sendToShip(cmd);
+
+            sendJson(exchange, 200, new JSONObject().put("status", "sent"));
+        }
+    }
+
+    private class ScanHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            synchronized (scanLock) {
+                lastScanDepth = null;
+                lastScanStddev = null;
+            }
+
+            JSONObject cmd = new JSONObject();
+            cmd.put("cmd", "scan");
+            sendToShip(cmd);
+
+            Integer depth;
+            Double stddev;
+            long timeoutAt = System.currentTimeMillis() + 2000;
+            synchronized (scanLock) {
+                while (lastScanDepth == null && System.currentTimeMillis() < timeoutAt) {
+                    try {
+                        scanLock.wait(200);
+                    } catch (InterruptedException ignored) {
+                    }
+                }
+                depth = lastScanDepth;
+                stddev = lastScanStddev;
+            }
+            JSONObject resp = new JSONObject();
+            resp.put("depth", depth != null ? depth : JSONObject.NULL);
+            resp.put("stddev", stddev != null ? stddev : JSONObject.NULL);
+            sendJson(exchange, 200, resp);
+        }
+    }
+
+    private class RadarHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            synchronized (radarLock) {
+                lastRadarEchos = null;
+            }
+
+            JSONObject cmd = new JSONObject();
+            cmd.put("cmd", "radar");
+            sendToShip(cmd);
+
+            JSONArray echos;
+            long timeoutAt = System.currentTimeMillis() + 2000;
+            synchronized (radarLock) {
+                while (lastRadarEchos == null && System.currentTimeMillis() < timeoutAt) {
+                    try {
+                        radarLock.wait(200);
+                    } catch (InterruptedException ignored) {
+                    }
+                }
+                echos = lastRadarEchos;
+            }
+            JSONObject resp = new JSONObject();
+            resp.put("echos", echos != null ? echos : new JSONArray());
+            sendJson(exchange, 200, resp);
+        }
+    }
+
+    private class SubStartHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            startSubmarineProcess(OCEAN_HOST, OCEAN_SUB_PORT);
+            sendJson(exchange, 200, new JSONObject().put("status", "sent"));
+        }
+    }
+
+    private class SubPilotHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            String body = readBody(exchange);
+            JSONObject jo = body.isEmpty() ? new JSONObject() : new JSONObject(body);
+            String id = jo.optString("id", null);
+            String routeStr = jo.optString("route", Route.C.name());
+            String action = jo.optString("action", "");
+
+            SubmarineSession session;
+            synchronized (submarineSessions) {
+                if (id == null || id.isEmpty()) {
+                    session = submarineSessions.values().stream().findFirst().orElse(null);
+                } else {
+                    session = submarineSessions.get(id);
+                }
+            }
+            if (session == null) {
+                sendJson(exchange, 400, new JSONObject().put("error", "no such submarine"));
+                return;
+            }
+
+            Route route = Route.valueOf(routeStr);
+            session.sendPilot(route, action);
+            sendJson(exchange, 200, new JSONObject().put("status", "sent"));
+        }
+    }
+
+    private class SubKillHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            String body = readBody(exchange);
+            JSONObject jo = body.isEmpty() ? new JSONObject() : new JSONObject(body);
+            String id = jo.optString("id", null);
+
+            SubmarineSession session;
+            synchronized (submarineSessions) {
+                if (id == null || id.isEmpty()) {
+                    session = submarineSessions.values().stream().findFirst().orElse(null);
+                } else {
+                    session = submarineSessions.get(id);
+                }
+            }
+            if (session == null) {
+                sendJson(exchange, 400, new JSONObject().put("error", "no such submarine"));
+                return;
+            }
+
+            session.kill();
+            synchronized (submarineSessions) {
+                submarineSessions.remove(session.getIdSafe());
+            }
+            sendJson(exchange, 200, new JSONObject().put("status", "killed"));
+        }
+    }
+
+    private class ResetHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+
+            // Schiff abmelden
+            if (shipId != null) {
+                try {
+                    JSONObject cmd = new JSONObject();
+                    cmd.put("cmd", "exit");
+                    sendToShip(cmd);
+                } catch (Exception e) {
+                    System.err.println("Fehler beim Senden von exit: " + e.getMessage());
+                }
+            }
+
+            shipId = null;
+            currentSector = null;
+            currentDir = null;
+            currentAbsPos = null;
+
+            synchronized (scanLock) {
+                lastScanDepth = null;
+                lastScanStddev = null;
+            }
+            synchronized (radarLock) {
+                lastRadarEchos = null;
+            }
+
+            // alle Submarines trennen
+            synchronized (submarineSessions) {
+                for (SubmarineSession s : submarineSessions.values()) {
+                    s.kill();
+                }
+                submarineSessions.clear();
+            }
+
+            // bestehende Verbindung zum Ocean-Server schließen und neu aufbauen,
+            // damit ein wirklich frisches Spiel möglich ist
+            try {
+                if (shipSocket != null && !shipSocket.isClosed()) {
+                    shipSocket.close();
+                }
+            } catch (IOException ignored) {
+            }
+            shipSocket = null;
+            shipIn = null;
+            shipOut = null;
+
+            try {
+                connectToOceanServer(OCEAN_HOST, OCEAN_SHIP_PORT);
+            } catch (IOException e) {
+                System.err.println("Fehler beim Reconnect zum Ocean-Server nach Reset: " + e.getMessage());
+            }
+
+            JSONObject resp = new JSONObject().put("status", "reset");
+            sendJson(exchange, 200, resp);
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Verbindung Ocean-Server (Ship-Client)
+    // ------------------------------------------------------------
+
+    private void connectToOceanServer(String host, int port) throws IOException {
+        System.out.printf("Verbinde zu Ocean-Server %s:%d ...%n", host, port);
+        shipSocket = new Socket(host, port);
+        shipIn = new BufferedReader(new InputStreamReader(shipSocket.getInputStream(), StandardCharsets.UTF_8));
+        shipOut = new PrintWriter(new OutputStreamWriter(shipSocket.getOutputStream(), StandardCharsets.UTF_8), true);
+        System.out.println("Verbindung zum Ocean-Server aufgebaut.");
+
+        Thread t = new Thread(this::shipListenLoop, "ShipAppApi-ShipListener");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void shipListenLoop() {
+        try {
+            String line;
+            while ((line = shipIn.readLine()) != null) {
+                if (line.isBlank()) {
+                    continue;
+                }
+                System.out.println("Vom Ocean-Server empfangen: " + line);
+                handleShipMessage(line);
+            }
+        } catch (IOException e) {
+            System.err.println("Verbindung zum Ocean-Server wurde beendet: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private synchronized void handleShipMessage(String jsonLine) {
+        JSONObject msg = new JSONObject(jsonLine);
+        String cmd = msg.optString("cmd", "");
+        switch (cmd) {
+            case "launched" -> handleLaunched(msg);
+            case "message" -> handleShipInfoMessage(msg);
+            case "move2d" -> handleMove2d(msg);
+            case "crash" -> handleShipCrash(msg);
+            case "scanned" -> handleScanned(msg);
+            case "radarresponse" -> handleRadarResponse(msg);
+            default -> System.out.println("Unbekannte Ship-Server-Nachricht: " + msg.toString());
+        }
+    }
+
+    private void handleLaunched(JSONObject msg) {
+        this.shipId = msg.optString("id", null);
+        JSONObject sectorJson = msg.optJSONObject("sector");
+        if (sectorJson != null) {
+            this.currentSector = Vec2D.fromJson(sectorJson);
+        }
+        JSONObject absposJson = msg.optJSONObject("abspos");
+        if (absposJson != null) {
+            this.currentAbsPos = Vec.fromJson(absposJson);
+        }
+        System.out.printf("Ship erfolgreich gelauncht. ID=%s, Sektor=%s, Pos=%s%n",
+                shipId, currentSector, currentAbsPos);
+    }
+
+    private void handleShipInfoMessage(JSONObject msg) {
+        String type = msg.optString("type", "info");
+        String text = msg.optString("text", "");
+        System.out.printf("Ship-Server-Message (%s): %s%n", type, text);
+    }
+
+    private void handleMove2d(JSONObject msg) {
+        JSONObject sectorJson = msg.optJSONObject("sector");
+        JSONObject dirJson = msg.optJSONObject("dir");
+        JSONObject absposJson = msg.optJSONObject("abspos");
+        if (sectorJson != null) {
+            currentSector = Vec2D.fromJson(sectorJson);
+        }
+        if (dirJson != null) {
+            currentDir = Vec2D.fromJson(dirJson);
+        }
+        if (absposJson != null) {
+            currentAbsPos = Vec.fromJson(absposJson);
+        }
+        System.out.printf("Neue Schiffsposition: Sektor=%s, Richtung=%s, Pos=%s%n",
+                currentSector, currentDir, currentAbsPos);
+    }
+
+    private void handleShipCrash(JSONObject msg) {
+        String message = msg.optString("message", "Crash");
+        JSONObject sectorJson = msg.optJSONObject("sector");
+        JSONObject sunkPosJson = msg.optJSONObject("sunkPos");
+        Vec2D sector = sectorJson != null ? Vec2D.fromJson(sectorJson) : null;
+        Vec sunkPos = sunkPosJson != null ? Vec.fromJson(sunkPosJson) : null;
+        System.out.printf("!!! Ship-Crash: %s, Sektor=%s, Sink-Pos=%s%n", message, sector, sunkPos);
+    }
+
+    private void handleScanned(JSONObject msg) {
+        int depth = msg.optInt("depth", -1);
+        double stddev = msg.optDouble("stddev", 0.0);
+        synchronized (scanLock) {
+            lastScanDepth = depth;
+            lastScanStddev = stddev;
+            scanLock.notifyAll();
+        }
+        System.out.printf("Scan-Ergebnis (ShipID=%s): depth=%d m, stddev=%.2f%n",
+                msg.optString("id", "?"), depth, stddev);
+    }
+
+    private void handleRadarResponse(JSONObject msg) {
+        JSONArray echos = msg.optJSONArray("echos");
+        synchronized (radarLock) {
+            lastRadarEchos = echos != null ? echos : new JSONArray();
+            radarLock.notifyAll();
+        }
+        System.out.println("Radar-Antwort mit " + (echos != null ? echos.length() : 0) + " Echos");
+    }
+
+    private synchronized void sendToShip(JSONObject cmd) {
+        if (shipOut == null) {
+            System.err.println("Keine Verbindung zum Ocean-Server.");
+            return;
+        }
+        shipOut.println(cmd.toString());
+    }
+
+    // ------------------------------------------------------------
+    // Submarine-Server
+    // ------------------------------------------------------------
+
+    private void startSubmarineServer(int serverPort, String oceanHost, int oceanSubPort) throws IOException {
+        submarineServerSocket = new ServerSocket(serverPort);
+        String localHostName = InetAddress.getLocalHost().getHostName();
+
+        System.out.printf("Submarine-Server gestartet auf Port %d (Host=%s)%n", serverPort, localHostName);
+        System.out.printf("Bereit zum Starten von Submarines (OceanSubPort=%d)%n", oceanSubPort);
+
+        Thread t = new Thread(() -> submarineAcceptLoop(localHostName, serverPort, oceanHost, oceanSubPort),
+                "ShipAppApi-SubmarineAccept");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void submarineAcceptLoop(String shipHost, int shipPort, String oceanHost, int oceanSubPort) {
+        while (!submarineServerSocket.isClosed()) {
+            try {
+                Socket s = submarineServerSocket.accept();
+                SubmarineSession session = new SubmarineSession(s);
+                session.start();
+                System.out.println("Neue Submarine-Verbindung angenommen.");
+            } catch (IOException e) {
+                if (!submarineServerSocket.isClosed()) {
+                    System.err.println("Fehler im Submarine-Accept-Loop: " + e.getMessage());
+                }
+                break;
+            }
+        }
+    }
+
+    private void startSubmarineProcess(String oceanHost, int oceanSubPort) {
+        if (shipId == null) {
+            System.err.println("Kein ShipID bekannt. Schiff muss zuerst gelauncht sein.");
+            return;
+        }
+        if (submarineServerSocket == null || submarineServerSocket.isClosed()) {
+            System.err.println("Submarine-Server läuft nicht.");
+            return;
+        }
+        try {
+            String shipHost = InetAddress.getLocalHost().getHostName();
+            int shipPort = submarineServerSocket.getLocalPort();
+            System.out.printf("Starte Submarine (shipId=%s, shipHost=%s, shipPort=%d, oceanHost=%s, oceanSubPort=%d)%n",
+                    shipId, shipHost, shipPort, oceanHost, oceanSubPort);
+            boolean ok = AppLauncher.startSubmarine(shipId, shipHost, shipPort, oceanHost, oceanSubPort);
+            if (!ok) {
+                System.err.println("Submarine-Prozess konnte nicht gestartet werden.");
+            } else {
+                System.out.println("Submarine-Prozess gestartet (siehe Submarine-GUI).");
+            }
+        } catch (IOException e) {
+            System.err.println("Fehler beim Ermitteln des lokalen Hostnamens: " + e.getMessage());
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Innere Klasse: SubmarineSession
+    // ------------------------------------------------------------
+
+    private class SubmarineSession extends Thread {
+        private final Socket socket;
+        private final BufferedReader in;
+        private final PrintWriter out;
+        private String submarineId;
+        private Vec lastPos;
+        private Vec lastDir;
+        private int depth;
+        private int distance;
+
+        SubmarineSession(Socket socket) throws IOException {
+            super("ShipAppApi-SubmarineSession");
+            this.socket = socket;
+            this.in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+            this.out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true);
+        }
+
+        String getIdSafe() {
+            return submarineId != null ? submarineId : "sub@" + socket.getPort();
+        }
+
+        JSONObject toJson() {
+            JSONObject jo = new JSONObject();
+            jo.put("id", submarineId != null ? submarineId : JSONObject.NULL);
+            if (lastPos != null) {
+                jo.put("pos", new JSONObject()
+                        .put("x", lastPos.getX())
+                        .put("y", lastPos.getY())
+                        .put("z", lastPos.getZ()));
+            }
+            jo.put("depth", depth);
+            jo.put("distance", distance);
+            return jo;
+        }
+
+        @Override
+        public void run() {
+            try {
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.isBlank()) {
+                        continue;
+                    }
+                    handleSubmarineMessage(line);
+                }
+            } catch (IOException e) {
+                System.err.println("Submarine-Verbindung beendet: " + e.getMessage());
+            } finally {
+                synchronized (submarineSessions) {
+                    if (submarineId != null) {
+                        submarineSessions.remove(submarineId);
+                    }
+                }
+                try {
+                    socket.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+
+        private void handleSubmarineMessage(String jsonLine) {
+            JSONObject msg = new JSONObject(jsonLine);
+            String cmd = msg.optString("cmd", "");
+            switch (cmd) {
+                case "ready" -> handleReady(msg);
+                case "message" -> handleSubMessage(msg);
+                case "measure" -> handleMeasure(msg);
+                case "picture" -> handlePicture(msg);
+                case "crash" -> handleSubCrash(msg);
+                case "arise" -> handleArise(msg);
+                default -> System.out.println("Unbekannte Submarine-Nachricht: " + msg.toString());
+            }
+        }
+
+        private void handleReady(JSONObject msg) {
+            this.submarineId = msg.optString("id", this.submarineId);
+            JSONObject posJson = msg.optJSONObject("pos");
+            JSONObject dirJson = msg.optJSONObject("dir");
+            depth = msg.optInt("depth", -1);
+            distance = msg.optInt("distance", -1);
+            lastPos = posJson != null ? Vec.fromJson(posJson) : null;
+            lastDir = dirJson != null ? Vec.fromJson(dirJson) : null;
+            synchronized (submarineSessions) {
+                submarineSessions.put(getIdSafe(), this);
+            }
+            System.out.printf("Submarine READY (id=%s): pos=%s, depth=%d, distance=%d%n",
+                    submarineId, lastPos, depth, distance);
+        }
+
+        private void handleSubMessage(JSONObject msg) {
+            String type = msg.optString("type", "info");
+            String text = msg.optString("text", "");
+            JSONObject posJson = msg.optJSONObject("pos");
+            Vec pos = posJson != null ? Vec.fromJson(posJson) : null;
+            System.out.printf("Submarine-Message (id=%s, type=%s): %s, pos=%s%n",
+                    submarineId, type, text, pos);
+        }
+
+        private void handleMeasure(JSONObject msg) {
+            JSONArray vecs = msg.optJSONArray("vecs");
+            int count = vecs != null ? vecs.length() : 0;
+            System.out.printf("Submarine MEASURE (id=%s): %d neue Messpunkte%n", submarineId, count);
+        }
+
+        private void handlePicture(JSONObject msg) {
+            System.out.printf("Submarine PICTURE (id=%s): Bild empfangen (PNG-Hex-String, Länge=%d)%n",
+                    submarineId, msg.optString("picture", "").length());
+        }
+
+        private void handleSubCrash(JSONObject msg) {
+            String message = msg.optString("message", "Crash");
+            JSONObject sectorJson = msg.optJSONObject("sector");
+            JSONObject sunkPosJson = msg.optJSONObject("sunkPos");
+            Vec2D sector = sectorJson != null ? Vec2D.fromJson(sectorJson) : null;
+            Vec sunkPos = sunkPosJson != null ? Vec.fromJson(sunkPosJson) : null;
+            System.out.printf("!!! Submarine-Crash (id=%s): %s, Sektor=%s, SinkPos=%s%n",
+                    submarineId, message, sector, sunkPos);
+        }
+
+        private void handleArise(JSONObject msg) {
+            JSONObject arisePosJson = msg.optJSONObject("arisePos");
+            Vec arisePos = arisePosJson != null ? Vec.fromJson(arisePosJson) : null;
+            System.out.printf("Submarine ARISE (id=%s): arisePos=%s%n", submarineId, arisePos);
+        }
+
+        void kill() {
+            try {
+                socket.close();
+            } catch (IOException ignored) {
+            }
+        }
+
+        void sendPilot(Route route, String action) {
+            JSONObject cmd = new JSONObject();
+            cmd.put("cmd", "pilot");
+            cmd.put("route", route.name());
+            if (action != null && !action.isEmpty()) {
+                cmd.put("action", action);
+            } else {
+                cmd.put("action", JSONObject.NULL);
+            }
+            out.println(cmd.toString());
+        }
+    }
+}
+
