@@ -86,10 +86,10 @@ function App() {
   const [radarData, setRadarData] = useState({ echos: [], shipSector: null })
   const [launchParams, setLaunchParams] = useState({
     name: 'Explorer1',
-    x: 0,
-    y: 0,
+    x: 1,
+    y: 1,
     dx: 0,
-    dy: 1,
+    dy: 0,
   })
 
   const appendLog = useCallback((msg) => {
@@ -313,7 +313,15 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          background:
+            'radial-gradient(circle at top, #0f172a 0, #020617 45%, #000 100%)',
+        }}
+      >
         <AppBar
           position="static"
           color="transparent"
@@ -347,26 +355,37 @@ function App() {
         <Box
           sx={{
             flex: 1,
-            p: 2,
+            py: 3,
+            px: 2,
             display: 'flex',
             alignItems: 'stretch',
+            justifyContent: 'center',
           }}
         >
-          <Grid
-            container
-            spacing={2}
-            sx={{ maxWidth: 1400, margin: '0 auto' }}
+          <Paper
+            elevation={10}
+            sx={{
+              width: '100%',
+              maxWidth: 1320,
+              borderRadius: 4,
+              p: { xs: 2, sm: 3 },
+              border: '1px solid rgba(148,163,184,0.35)',
+              background:
+                'radial-gradient(ellipse at top left, rgba(56,189,248,0.18), transparent 55%), radial-gradient(ellipse at bottom right, rgba(34,197,94,0.15), transparent 60%), rgba(15,23,42,0.98)',
+            }}
           >
-            {/* Schiff starten */}
-            <Grid item xs={12} md={4}>
-              <Paper
-                elevation={6}
+            <Stack spacing={3}>
+              {/* Schiff starten */}
+              <Box
+                component="section"
+                aria-labelledby="ship-launch-heading"
                 sx={{
-                  p: 2,
-                  height: '100%',
-                  borderRadius: 3,
                   position: 'relative',
                   overflow: 'hidden',
+                  borderRadius: 3,
+                  p: 2,
+                  background:
+                    'linear-gradient(145deg, rgba(15,23,42,0.95), rgba(15,23,42,0.8))',
                 }}
               >
                 <Box
@@ -379,7 +398,9 @@ function App() {
                   }}
                 />
                 <Stack spacing={2} sx={{ position: 'relative' }}>
-                  <Typography variant="h6">Schiff starten</Typography>
+                  <Typography id="ship-launch-heading" variant="h6">
+                    Schiff starten
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Verbinde dein Forschungsschiff mit dem Ocean-Server und
                     setze die Startposition.
@@ -402,6 +423,7 @@ function App() {
                     <Grid item xs={6}>
                       <TextField
                         label="Sektor X"
+                        defaultValue={1}
                         size="small"
                         type="number"
                         fullWidth
@@ -418,6 +440,8 @@ function App() {
                       <TextField
                         label="Sektor Y"
                         size="small"
+                                                defaultValue={1}
+
                         type="number"
                         fullWidth
                         value={launchParams.y}
@@ -460,10 +484,14 @@ function App() {
                       />
                     </Grid>
                   </Grid>
-                  <Stack direction="row" spacing={1}>
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1}
+                    sx={{ alignItems: { xs: 'stretch', sm: 'center' } }}
+                  >
                     <Button
                       variant="contained"
-                      color="white"
+                      color="primary"
                       startIcon={<PlayArrow />}
                       onClick={handleLaunch}
                       disabled={isLaunching}
@@ -497,21 +525,23 @@ function App() {
                     </>
                   )}
                 </Stack>
-              </Paper>
-            </Grid>
+              </Box>
 
-            {/* Navigation */}
-            <Grid item xs={12} md={4}>
-              <Paper
-                elevation={6}
+              {/* Navigation */}
+              <Box
+                component="section"
+                aria-labelledby="navigation-heading"
                 sx={{
-                  p: 2,
-                  height: '100%',
                   borderRadius: 3,
+                  p: 2,
+                  background:
+                    'linear-gradient(145deg, rgba(15,23,42,0.95), rgba(15,23,42,0.8))',
                 }}
               >
                 <Stack spacing={2} alignItems="stretch">
-                  <Typography variant="h6">Navigation</Typography>
+                  <Typography id="navigation-heading" variant="h6">
+                    Navigation
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Nutze die Buttons oder die Tastatur (WASD + Q/E), um das
                     Schiff im 10×10 km Ozean zu bewegen.
@@ -525,6 +555,8 @@ function App() {
                           gap: 1,
                           justifyItems: 'center',
                         }}
+                        aria-label="Steuerkreuz für das Schiff"
+                        role="group"
                       >
                         <Tooltip title="Vorwärts links (A)">
                           <span>
@@ -533,6 +565,7 @@ function App() {
                               onClick={() =>
                                 sendNavigate('Left', 'Forward')
                               }
+                              aria-label="Vorwärts links (A)"
                             >
                               <ArrowBack />
                             </IconButton>
@@ -545,6 +578,7 @@ function App() {
                               onClick={() =>
                                 sendNavigate('Center', 'Forward')
                               }
+                              aria-label="Vorwärts (W)"
                             >
                               <ArrowUpward />
                             </IconButton>
@@ -557,6 +591,7 @@ function App() {
                               onClick={() =>
                                 sendNavigate('Right', 'Forward')
                               }
+                              aria-label="Vorwärts rechts (D)"
                             >
                               <ArrowForward />
                             </IconButton>
@@ -569,6 +604,7 @@ function App() {
                               onClick={() =>
                                 sendNavigate('Left', 'Backward')
                               }
+                              aria-label="Rückwärts links (Q)"
                             >
                               <ArrowBack />
                             </IconButton>
@@ -581,6 +617,7 @@ function App() {
                               onClick={() =>
                                 sendNavigate('Center', 'Backward')
                               }
+                              aria-label="Rückwärts (S)"
                             >
                               <ArrowDownward />
                             </IconButton>
@@ -593,13 +630,18 @@ function App() {
                               onClick={() =>
                                 sendNavigate('Right', 'Backward')
                               }
+                              aria-label="Rückwärts rechts (E)"
                             >
                               <ArrowForward />
                             </IconButton>
                           </span>
                         </Tooltip>
                       </Box>
-                      <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        sx={{ mt: 2, flexWrap: 'wrap' }}
+                      >
                         <Button
                           variant="outlined"
                           startIcon={<TravelExplore />}
@@ -617,60 +659,117 @@ function App() {
                       </Stack>
                     </Grid>
                     <Grid item xs={12} sm={6}>
-                  
-                      <Box
-                        sx={{
-                          position: 'relative',
-                          width: 220,
-                          height: 220,
-                          borderRadius: '50%',
-                          overflow: 'hidden',
-                          boxShadow:
-                            '0 0 25px rgba(56,189,248,0.6), inset 0 0 20px rgba(15,23,42,0.9)',
-                          backgroundColor: '#020617',
-                        }}
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mt: { xs: 1, sm: 0 } }}
                       >
-                        <img
-                          src="/radar.gif"
-                          alt="Radar"
-                          style={{
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            mixBlendMode: 'screen',
-                            opacity: 0.9,
-                          }}
-                        />
-                        <svg
-                          width={220}
-                          height={220}
-                          style={{
-                            position: 'absolute',
-                            inset: 0,
-                            pointerEvents: 'none',
-                          }}
-                        >
-                          {renderRadarBlips()}
-                        </svg>
-                      </Box>
+                        Tipp: Halte die Hand auf WASD und den Pfeiltasten, um
+                        Schiff und Submarines parallel zu steuern.
+                      </Typography>
                     </Grid>
                   </Grid>
                 </Stack>
-              </Paper>
-            </Grid>
+              </Box>
 
-            {/* Submarines & Logs */}
-            <Grid item xs={12} md={4}>
-              <Paper
-                elevation={6}
+              {/* Radar */}
+              <Box
+                component="section"
+                aria-labelledby="radar-heading"
                 sx={{
-                  p: 2,
-                  mb: 2,
                   borderRadius: 3,
+                  p: 2,
+                  background:
+                    'linear-gradient(145deg, rgba(15,23,42,0.96), rgba(15,23,42,0.85))',
                 }}
               >
                 <Stack spacing={2}>
-                  <Typography variant="h6">Submarines</Typography>
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    justifyContent="space-between"
+                  >
+                    <Typography id="radar-heading" variant="h6">
+                      Radar
+                    </Typography>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<Radar />}
+                      onClick={sendRadar}
+                    >
+                      Pulse
+                    </Button>
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    Visualisiere Echos im Umfeld des Schiffs. Leuchtende
+                    Punkte markieren zurückgeworfene Signale.
+                  </Typography>
+                  <Box
+                    sx={{
+                      mt: 1,
+                      display: 'flex',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        position: 'relative',
+                        width: { xs: 260, sm: 300, md: 340 },
+                        height: { xs: 260, sm: 300, md: 340 },
+                        borderRadius: '50%',
+                        overflow: 'hidden',
+                        boxShadow:
+                          '0 0 35px rgba(56,189,248,0.7), inset 0 0 25px rgba(15,23,42,0.95)',
+                        backgroundColor: '#020617',
+                      }}
+                      aria-label="Radaransicht der Umgebung"
+                      role="img"
+                    >
+                      <img
+                        src="/radar.gif"
+                        alt=""
+                        aria-hidden="true"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          mixBlendMode: 'screen',
+                          opacity: 0.9,
+                        }}
+                      />
+                      <svg
+                        width="100%"
+                        height="100%"
+                        viewBox="0 0 220 220"
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {renderRadarBlips()}
+                      </svg>
+                    </Box>
+                  </Box>
+                </Stack>
+              </Box>
+
+              {/* Submarines */}
+              <Box
+                component="section"
+                aria-labelledby="submarines-heading"
+                sx={{
+                  borderRadius: 3,
+                  p: 2,
+                  background:
+                    'linear-gradient(145deg, rgba(15,23,42,0.97), rgba(15,23,42,0.85))',
+                }}
+              >
+                <Stack spacing={2}>
+                  <Typography id="submarines-heading" variant="h6">
+                    Submarines
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Setze Tauchroboter ein, um Details des aktuellen Sektors zu
                     erforschen. Während des Tauchgangs darf das Schiff den
@@ -678,7 +777,7 @@ function App() {
                   </Typography>
                   <Button
                     variant="contained"
-                    color="white"
+                    color="secondary"
                     startIcon={<DirectionsBoat />}
                     onClick={startSubmarine}
                   >
@@ -700,9 +799,12 @@ function App() {
                                 <IconButton
                                   size="small"
                                   color={
-                                    selectedSubId === s.id ? 'secondary' : 'default'
+                                    selectedSubId === s.id
+                                      ? 'secondary'
+                                      : 'default'
                                   }
                                   onClick={() => setSelectedSubId(s.id)}
+                                  aria-label="Submarine mit Pfeiltasten steuern"
                                 >
                                   <ArrowUpward fontSize="small" />
                                 </IconButton>
@@ -711,6 +813,7 @@ function App() {
                                 <IconButton
                                   size="small"
                                   onClick={() => pilotSubmarine(s.id, 'C')}
+                                  aria-label="Submarine geradeaus"
                                 >
                                   <PlayArrow fontSize="small" />
                                 </IconButton>
@@ -721,6 +824,7 @@ function App() {
                                   onClick={() =>
                                     pilotSubmarine(s.id, 'UP')
                                   }
+                                  aria-label="Submarine aufsteigen"
                                 >
                                   <ArrowUpward fontSize="small" />
                                 </IconButton>
@@ -731,6 +835,7 @@ function App() {
                                   onClick={() =>
                                     pilotSubmarine(s.id, 'DOWN')
                                   }
+                                  aria-label="Submarine abtauchen"
                                 >
                                   <ArrowDownward fontSize="small" />
                                 </IconButton>
@@ -745,6 +850,7 @@ function App() {
                                       'take_photo',
                                     )
                                   }
+                                  aria-label="Submarine Foto aufnehmen"
                                 >
                                   <PhotoCamera fontSize="small" />
                                 </IconButton>
@@ -755,6 +861,7 @@ function App() {
                                   onClick={() =>
                                     pilotSubmarine(s.id, 'None', 'locate')
                                   }
+                                  aria-label="Submarine lokalisieren"
                                 >
                                   <TravelExplore fontSize="small" />
                                 </IconButton>
@@ -765,6 +872,7 @@ function App() {
                                   onClick={() =>
                                     pilotSubmarine(s.id, 'W')
                                   }
+                                  aria-label="Submarine nach links drehen"
                                 >
                                   <RotateLeft fontSize="small" />
                                 </IconButton>
@@ -775,6 +883,7 @@ function App() {
                                   onClick={() =>
                                     pilotSubmarine(s.id, 'E')
                                   }
+                                  aria-label="Submarine nach rechts drehen"
                                 >
                                   <RotateRight fontSize="small" />
                                 </IconButton>
@@ -784,6 +893,7 @@ function App() {
                                   size="small"
                                   color="error"
                                   onClick={() => killSubmarine(s.id)}
+                                  aria-label="Submarine stoppen"
                                 >
                                   <DeleteForever fontSize="small" />
                                 </IconButton>
@@ -804,16 +914,22 @@ function App() {
                     </List>
                   )}
                 </Stack>
-              </Paper>
+              </Box>
 
-              <Paper
-                elevation={6}
+              {/* Log */}
+              <Box
+                component="section"
+                aria-labelledby="log-heading"
                 sx={{
-                  p: 2,
                   borderRadius: 3,
+                  p: 2,
+                  flex: 1,
+                  minHeight: 180,
                   maxHeight: 260,
                   display: 'flex',
                   flexDirection: 'column',
+                  background:
+                    'linear-gradient(145deg, rgba(15,23,42,0.98), rgba(15,23,42,0.9))',
                 }}
               >
                 <Stack
@@ -821,7 +937,9 @@ function App() {
                   alignItems="center"
                   justifyContent="space-between"
                 >
-                  <Typography variant="h6">Log</Typography>
+                  <Typography id="log-heading" variant="h6">
+                    Log
+                  </Typography>
                   <Button
                     size="small"
                     color="inherit"
@@ -840,6 +958,7 @@ function App() {
                     fontSize: 12,
                     pr: 1,
                   }}
+                  aria-live="polite"
                 >
                   {logs.map((l, i) => (
                     <Typography key={i} variant="body2">
@@ -847,9 +966,9 @@ function App() {
                     </Typography>
                   ))}
                 </Box>
-              </Paper>
-            </Grid>
-          </Grid>
+              </Box>
+            </Stack>
+          </Paper>
         </Box>
       </Box>
     </ThemeProvider>

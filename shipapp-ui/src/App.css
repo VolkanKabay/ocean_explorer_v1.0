@@ -1,185 +1,23 @@
-#root {
-  min-height: 100vh;
+/* Global background and smooth rendering for the app shell.
+   Most layout/styling is handled via MUI in App.jsx. */
+
+html,
+body {
   margin: 0;
-  padding: 1.5rem;
-  background: radial-gradient(circle at top, #003366 0, #000814 55%, #000 100%);
-  color: #f5f7ff;
+  padding: 0;
+  height: 100%;
+  background: #020617;
+  color: #f9fafb;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
     sans-serif;
 }
 
-.app {
-  max-width: 1280px;
-  margin: 0 auto;
+#root {
+  min-height: 100vh;
 }
 
-.app-header {
-  margin-bottom: 1.5rem;
-}
-
-.app-header h1 {
-  font-size: 1.9rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-}
-
-.app-main {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1.5rem;
-}
-
-.panel {
-  background: rgba(10, 25, 47, 0.9);
-  border-radius: 12px;
-  padding: 1rem 1.25rem;
-  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(100, 255, 218, 0.15);
-}
-
-.panel h2 {
-  font-size: 1.1rem;
-  margin: 0 0 0.75rem;
-  color: #64ffda;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem 0.75rem;
-  margin-bottom: 0.75rem;
-}
-
-.form-grid label {
-  display: flex;
-  flex-direction: column;
-  font-size: 0.8rem;
-  color: #a0b3c5;
-}
-
-.form-grid input {
-  margin-top: 0.15rem;
-  padding: 0.3rem 0.45rem;
-  border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  background: rgba(15, 23, 42, 0.9);
-  color: #e5e7eb;
-  font-size: 0.85rem;
-}
-
-.form-grid input:focus {
-  outline: none;
-  border-color: #64ffda;
-  box-shadow: 0 0 0 1px rgba(100, 255, 218, 0.4);
-}
-
-button {
-  cursor: pointer;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.8);
-  padding: 0.35rem 0.9rem;
-  font-size: 0.85rem;
-  background: linear-gradient(135deg, #020617, #020617);
-  color: #e5e7eb;
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    transform 0.1s ease,
-    box-shadow 0.1s ease;
-}
-
-button:hover:not(:disabled) {
-  background: radial-gradient(circle at top, #0f172a, #020617);
-  border-color: #64ffda;
-  box-shadow: 0 0 0 1px rgba(100, 255, 218, 0.4);
-  transform: translateY(-1px);
-}
-
-button:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: none;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-button.primary {
-  background: linear-gradient(135deg, #0ea5e9, #22c55e);
-  border-color: transparent;
-  color: #0b1120;
-  font-weight: 600;
-}
-
-button.primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #38bdf8, #4ade80);
-  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.9);
-}
-
-.ship-state {
-  margin-top: 0.6rem;
-  padding-top: 0.6rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.4);
-  font-size: 0.85rem;
-  color: #cbd5f5;
-}
-
-.nav-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.4rem;
-  justify-items: center;
-  margin-bottom: 0.6rem;
-}
-
-.nav-grid button {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 999px;
-}
-
-.nav-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.hint {
-  font-size: 0.8rem;
-  color: #9ca3af;
-}
-
-.sub-list {
-  list-style: none;
-  padding: 0;
-  margin: 0.5rem 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-}
-
-.sub-buttons {
-  display: flex;
-  gap: 0.4rem;
-  margin-top: 0.3rem;
-  flex-wrap: wrap;
-}
-
-.logs-panel {
-  grid-column: 1 / -1;
-}
-
-.logs {
-  margin-top: 0.4rem;
-  max-height: 200px;
-  overflow-y: auto;
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco,
-    Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-size: 0.78rem;
-  padding: 0.5rem;
-  background: rgba(7, 16, 32, 0.9);
-  border-radius: 8px;
-  border: 1px solid rgba(30, 64, 175, 0.9);
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
