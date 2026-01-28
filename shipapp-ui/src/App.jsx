@@ -193,6 +193,19 @@ function App() {
   }
 
   const activeSubs = state?.submarines ?? []
+  const [selectedSubId, setSelectedSubId] = useState(null)
+
+  // Wenn die aktuelle Auswahl nicht mehr existiert, auf erstes Sub umschalten oder auf null
+  useEffect(() => {
+    if (!activeSubs || activeSubs.length === 0) {
+      setSelectedSubId(null)
+      return
+    }
+    const stillExists = activeSubs.some((s) => s.id === selectedSubId)
+    if (!stillExists) {
+      setSelectedSubId(activeSubs[0].id)
+    }
+  }, [activeSubs, selectedSubId])
 
   // Tastatursteuerung:
   // - WASD + Q/E: steuern immer das Schiff (Navigate)
@@ -221,23 +234,28 @@ function App() {
       // Submarine mit Pfeiltasten (falls vorhanden)
       if (!hasSub) return
 
+      const targetId =
+        selectedSubId && activeSubs.some((s) => s.id === selectedSubId)
+          ? selectedSubId
+          : activeSubs[0].id
+
       if (e.key === 'ArrowUp') {
         // Geradeaus fahren
-        pilotSubmarine(undefined, 'C')
+        pilotSubmarine(targetId, 'C')
       } else if (e.key === 'ArrowDown') {
         // Abtauchen
-        pilotSubmarine(undefined, 'DOWN')
+        pilotSubmarine(targetId, 'DOWN')
       } else if (e.key === 'ArrowLeft') {
         // Nach links drehen
-        pilotSubmarine(undefined, 'W')
+        pilotSubmarine(targetId, 'W')
       } else if (e.key === 'ArrowRight') {
         // Nach rechts drehen
-        pilotSubmarine(undefined, 'E')
+        pilotSubmarine(targetId, 'E')
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [activeSubs, pilotSubmarine, sendNavigate])
+  }, [activeSubs, pilotSubmarine, sendNavigate, selectedSubId])
 
   const clearAll = () => {
     setLogs([])
@@ -445,7 +463,7 @@ function App() {
                   <Stack direction="row" spacing={1}>
                     <Button
                       variant="contained"
-                      color="primary"
+                      color="white"
                       startIcon={<PlayArrow />}
                       onClick={handleLaunch}
                       disabled={isLaunching}
@@ -660,7 +678,7 @@ function App() {
                   </Typography>
                   <Button
                     variant="contained"
-                    color="secondary"
+                    color="white"
                     startIcon={<DirectionsBoat />}
                     onClick={startSubmarine}
                   >
@@ -678,6 +696,17 @@ function App() {
                           disableGutters
                           secondaryAction={
                             <Stack direction="row" spacing={0.5}>
+                              <Tooltip title="Mit Pfeiltasten steuern">
+                                <IconButton
+                                  size="small"
+                                  color={
+                                    selectedSubId === s.id ? 'secondary' : 'default'
+                                  }
+                                  onClick={() => setSelectedSubId(s.id)}
+                                >
+                                  <ArrowUpward fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
                               <Tooltip title="Geradeaus">
                                 <IconButton
                                   size="small"
