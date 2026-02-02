@@ -9,6 +9,7 @@ import ocean.Rudder;
 import ocean.Route;
 import ocean.Vec;
 import ocean.Vec2D;
+import ocean.OceanPicture;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -18,6 +19,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.io.File;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -65,19 +67,25 @@ public class ShipAppApiServer {
     private ServerSocket submarineServerSocket;
     private final Map<String, SubmarineSession> submarineSessions = new HashMap<>();
 
+    // Datenbank-Repository für Submarine-Daten
+    private SubmarineRepository submarineRepository;
+
     public static void main(String[] args) throws Exception {
         ShipAppApiServer server = new ShipAppApiServer();
         server.start();
     }
 
     public void start() throws Exception {
-        // 1. Verbindung zum Ocean-Server
+        // 1. Datenbank-Repository initialisieren
+        submarineRepository = new SubmarineRepository();
+
+        // 2. Verbindung zum Ocean-Server
         connectToOceanServer(OCEAN_HOST, OCEAN_SHIP_PORT);
 
-        // 2. Submarine-Server starten
+        // 3. Submarine-Server starten
         startSubmarineServer(SHIPAPP_SUB_SERVER_PORT, OCEAN_HOST, OCEAN_SUB_PORT);
 
-        // 3. HTTP-Server starten
+        // 4. HTTP-Server starten
         HttpServer httpServer = HttpServer.create(new InetSocketAddress(HTTP_PORT), 0);
         httpServer.createContext("/api/state", new StateHandler());
         httpServer.createContext("/api/launch", new LaunchHandler());
@@ -87,6 +95,7 @@ public class ShipAppApiServer {
         httpServer.createContext("/api/submarine/start", new SubStartHandler());
         httpServer.createContext("/api/submarine/pilot", new SubPilotHandler());
         httpServer.createContext("/api/submarine/kill", new SubKillHandler());
+        httpServer.createContext("/api/submarine/measurements", new MeasurementsHandler());
         httpServer.createContext("/api/reset", new ResetHandler());
         httpServer.createContext("/api", this::handleRoot);
         httpServer.setExecutor(null);
@@ -433,6 +442,61 @@ public class ShipAppApiServer {
         }
     }
 
+    /**
+     * Handler zum Abrufen der gespeicherten Messpunkte aus der Datenbank.
+     * GET /api/submarine/measurements?id=<submarineId> - Messpunkte eines Submarines
+     * GET /api/submarine/measurements - Übersicht aller Submarines mit Zählungen
+     */
+    private class MeasurementsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+
+            if (submarineRepository == null) {
+                sendJson(exchange, 500, new JSONObject().put("error", "Datenbank nicht verfügbar"));
+                return;
+            }
+
+            // Query-Parameter auslesen
+            String query = exchange.getRequestURI().getQuery();
+            String submarineId = null;
+            if (query != null) {
+                for (String param : query.split("&")) {
+                    String[] pair = param.split("=");
+                    if (pair.length == 2 && "id".equals(pair[0])) {
+                        submarineId = pair[1];
+                    }
+                }
+            }
+
+            JSONObject resp = new JSONObject();
+            if (submarineId != null && !submarineId.isEmpty()) {
+                // Messpunkte eines bestimmten Submarines
+                JSONArray measurements = submarineRepository.getMeasurements(submarineId);
+                resp.put("submarine_id", submarineId);
+                resp.put("count", measurements.length());
+                resp.put("measurements", measurements);
+            } else {
+                // Übersicht aller Submarines
+                var activeSubmarines = submarineRepository.getActiveSubmarines();
+                JSONArray subsArray = new JSONArray();
+                for (String id : activeSubmarines) {
+                    JSONObject sub = new JSONObject();
+                    sub.put("id", id);
+                    sub.put("measurement_count", submarineRepository.getMeasurementCount(id));
+                    subsArray.put(sub);
+                }
+                resp.put("submarines", subsArray);
+                resp.put("total_measurements", submarineRepository.getTotalMeasurementCount());
+            }
+
+            sendJson(exchange, 200, resp);
+        }
+    }
+
     // ------------------------------------------------------------
     // Verbindung Ocean-Server (Ship-Client)
     // ------------------------------------------------------------
@@ -707,6 +771,12 @@ public class ShipAppApiServer {
             }
             System.out.printf("Submarine READY (id=%s): pos=%s, depth=%d, distance=%d%n",
                     submarineId, lastPos, depth, distance);
+
+            // In Datenbank speichern
+            if (submarineRepository != null && submarineId != null) {
+                submarineRepository.saveSubmarine(submarineId, shipId);
+                submarineRepository.savePosition(submarineId, lastPos, lastDir, depth, distance);
+            }
         }
 
         private void handleSubMessage(JSONObject msg) {
@@ -722,11 +792,60 @@ public class ShipAppApiServer {
             JSONArray vecs = msg.optJSONArray("vecs");
             int count = vecs != null ? vecs.length() : 0;
             System.out.printf("Submarine MEASURE (id=%s): %d neue Messpunkte%n", submarineId, count);
+
+            // Messpunkte in Datenbank speichern
+            if (submarineRepository != null && submarineId != null && vecs != null) {
+                submarineRepository.saveMeasurements(submarineId, vecs);
+            }
         }
 
         private void handlePicture(JSONObject msg) {
+            String hex = msg.optString("picture", "");
+            int len = hex != null ? hex.length() : 0;
             System.out.printf("Submarine PICTURE (id=%s): Bild empfangen (PNG-Hex-String, Länge=%d)%n",
-                    submarineId, msg.optString("picture", "").length());
+                    submarineId, len);
+
+            if (hex == null || hex.isEmpty()) {
+                return;
+            }
+
+            String savedFilePath = null;
+
+            try {
+                // Hex-String in Bild umwandeln
+                var img = OceanPicture.convertHexString2Image(hex);
+                if (img == null) {
+                    System.err.println("Submarine PICTURE: Konnte Bild aus Hex-String nicht dekodieren.");
+                    return;
+                }
+
+                // Zielverzeichnis vorbereiten (relativ zum Working-Directory)
+                File dir = new File("pictures");
+                if (!dir.exists() && !dir.mkdirs()) {
+                    System.err.println("Submarine PICTURE: Konnte Verzeichnis 'pictures' nicht anlegen.");
+                    return;
+                }
+
+                // Dateiname: pictures/sub_<id>_<timestamp>.png
+                String idSafe = submarineId != null ? submarineId : "unknown";
+                long ts = System.currentTimeMillis();
+                String filename = new File(dir, "sub_" + idSafe + "_" + ts + ".png").getPath();
+
+                boolean ok = OceanPicture.saveAsPNG(img, filename);
+                if (ok) {
+                    System.out.println("Submarine PICTURE: Bild gespeichert unter: " + filename);
+                    savedFilePath = filename;
+                } else {
+                    System.err.println("Submarine PICTURE: Speichern unter '" + filename + "' fehlgeschlagen.");
+                }
+            } catch (Exception e) {
+                System.err.println("Submarine PICTURE: Fehler beim Speichern des Bildes: " + e.getMessage());
+            }
+
+            // Bild in Datenbank speichern
+            if (submarineRepository != null && submarineId != null) {
+                submarineRepository.savePicture(submarineId, hex, savedFilePath);
+            }
         }
 
         private void handleSubCrash(JSONObject msg) {
@@ -737,12 +856,22 @@ public class ShipAppApiServer {
             Vec sunkPos = sunkPosJson != null ? Vec.fromJson(sunkPosJson) : null;
             System.out.printf("!!! Submarine-Crash (id=%s): %s, Sektor=%s, SinkPos=%s%n",
                     submarineId, message, sector, sunkPos);
+
+            // Crash in Datenbank speichern
+            if (submarineRepository != null && submarineId != null) {
+                submarineRepository.saveCrash(submarineId, message, sector, sunkPos);
+            }
         }
 
         private void handleArise(JSONObject msg) {
             JSONObject arisePosJson = msg.optJSONObject("arisePos");
             Vec arisePos = arisePosJson != null ? Vec.fromJson(arisePosJson) : null;
             System.out.printf("Submarine ARISE (id=%s): arisePos=%s%n", submarineId, arisePos);
+
+            // Arise-Event in Datenbank speichern
+            if (submarineRepository != null && submarineId != null) {
+                submarineRepository.saveArise(submarineId, arisePos);
+            }
         }
 
         void kill() {

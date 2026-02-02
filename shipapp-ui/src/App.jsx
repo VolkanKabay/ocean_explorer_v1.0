@@ -217,18 +217,19 @@ function App() {
       const hasSub = activeSubs.length > 0
 
       // Schiff steuern mit WASD + Q/E
+      // W = vorwärts, A = vorwärts-links, D = vorwärts-rechts, S = rückwärts
       if (key === 'w') {
         sendNavigate('Center', 'Forward')
       } else if (key === 's') {
         sendNavigate('Center', 'Backward')
-      } else if (key === 'a') {
-        sendNavigate('Left', 'Forward')
-      } else if (key === 'd') {
-        sendNavigate('Right', 'Forward')
       } else if (key === 'q') {
         sendNavigate('Left', 'Backward')
       } else if (key === 'e') {
         sendNavigate('Right', 'Backward')
+      } else if (key === 'd') {
+        sendNavigate('Right', 'Forward')
+      } else if (key === 'a') {
+        sendNavigate('Left', 'Forward')
       }
 
       // Submarine mit Pfeiltasten (falls vorhanden)
