@@ -93,3 +93,48 @@ java -cp ".;libs/json.jar;libs/mysql-connector-j-8.3.0.jar" shipapp.ShipAppApiSe
 # Linux/Mac
 java -cp ".:libs/json.jar:libs/mysql-connector-j-8.3.0.jar" shipapp.ShipAppApiServer
 ```
+
+## Mehrere Schiffe gleichzeitig betreiben
+
+Jede Schiff-Instanz benötigt eigene Ports. Die Konfiguration erfolgt über Kommandozeilenargumente:
+
+```
+java shipapp.ShipAppApiServer [httpPort] [subServerPort] [oceanShipPort] [oceanSubPort] [oceanHost]
+```
+
+### Beispiel: Drei Schiffe starten
+
+```bash
+# Schiff 1 (Standard-Ports)
+java -cp ".;libs/json.jar;libs/mysql-connector-j-8.3.0.jar" shipapp.ShipAppApiServer
+
+# Schiff 2 (andere Ports)
+java -cp ".;libs/json.jar;libs/mysql-connector-j-8.3.0.jar" shipapp.ShipAppApiServer 8081 6001
+
+# Schiff 3 (weitere Ports)
+java -cp ".;libs/json.jar;libs/mysql-connector-j-8.3.0.jar" shipapp.ShipAppApiServer 8082 6002
+```
+
+### Port-Übersicht
+
+| Schiff | HTTP-Port | Sub-Server-Port | Frontend-URL |
+|--------|-----------|-----------------|--------------|
+| 1      | 8080      | 6000            | http://localhost:5173 (Standard) |
+| 2      | 8081      | 6001            | http://localhost:5174 |
+| 3      | 8082      | 6002            | http://localhost:5175 |
+
+### Frontend für anderes Schiff konfigurieren
+
+Im React-Frontend (`shipapp-ui/src/App.jsx`) die API-URL anpassen:
+```javascript
+const API_BASE = 'http://localhost:8081/api';  // Für Schiff 2
+```
+
+Oder mehrere Frontend-Instanzen auf verschiedenen Ports starten:
+```bash
+# Terminal 1 - Frontend für Schiff 1
+cd shipapp-ui && npm run dev -- --port 5173
+
+# Terminal 2 - Frontend für Schiff 2  
+cd shipapp-ui && npm run dev -- --port 5174
+```

@@ -34,15 +34,28 @@ import java.util.Map;
  *
  * Läuft als separater Prozess (main-Methode) und stellt Endpunkte unter
  * http://localhost:8080/api/... bereit.
+ * Für mehrere Schiffe können verschiedene Ports über Kommandozeilenargumente
+ * konfiguriert werden:
+ *   java ShipAppApiServer [httpPort] [subServerPort] [oceanShipPort] [oceanSubPort] [oceanHost]
+ *
+ * Beispiel für zweites Schiff:
+ *   java ShipAppApiServer 8081 6001 8150 8151 localhost
  */
 public class ShipAppApiServer {
 
-    // Konfiguration – bei Bedarf anpassen
-    private static final String OCEAN_HOST = "localhost";
-    private static final int OCEAN_SHIP_PORT = 8150;
-    private static final int OCEAN_SUB_PORT = 8151;
-    private static final int SHIPAPP_SUB_SERVER_PORT = 6000;
-    private static final int HTTP_PORT = 8080;
+    // Standard-Konfiguration (kann über Kommandozeilenargumente überschrieben werden)
+    private static final String DEFAULT_OCEAN_HOST = "localhost";
+    private static final int DEFAULT_OCEAN_SHIP_PORT = 8150;
+    private static final int DEFAULT_OCEAN_SUB_PORT = 8151;
+    private static final int DEFAULT_SUB_SERVER_PORT = 6000;
+    private static final int DEFAULT_HTTP_PORT = 8080;
+
+    // Instanz-Konfiguration (pro Schiff unterschiedlich)
+    private final String oceanHost;
+    private final int oceanShipPort;
+    private final int oceanSubPort;
+    private final int subServerPort;
+    private final int httpPort;
 
     // Verbindung Ocean-Server (Ship-Port)
     private Socket shipSocket;
@@ -70,8 +83,66 @@ public class ShipAppApiServer {
     // Datenbank-Repository für Submarine-Daten
     private SubmarineRepository submarineRepository;
 
+    /**
+     * Konstruktor mit Standard-Konfiguration.
+     */
+    public ShipAppApiServer() {
+        this(DEFAULT_HTTP_PORT, DEFAULT_SUB_SERVER_PORT, DEFAULT_OCEAN_SHIP_PORT, 
+             DEFAULT_OCEAN_SUB_PORT, DEFAULT_OCEAN_HOST);
+    }
+
+    /**
+     * Konstruktor mit individueller Port-Konfiguration für mehrere Schiff-Instanzen.
+     *
+     * @param httpPort        HTTP-API-Port (z.B. 8080, 8081, 8082, ...)
+     * @param subServerPort   Submarine-Server-Port (z.B. 6000, 6001, 6002, ...)
+     * @param oceanShipPort   Ocean-Server Ship-Port
+     * @param oceanSubPort    Ocean-Server Submarine-Port
+     * @param oceanHost       Ocean-Server Hostname
+     */
+    public ShipAppApiServer(int httpPort, int subServerPort, int oceanShipPort, 
+                            int oceanSubPort, String oceanHost) {
+        this.httpPort = httpPort;
+        this.subServerPort = subServerPort;
+        this.oceanShipPort = oceanShipPort;
+        this.oceanSubPort = oceanSubPort;
+        this.oceanHost = oceanHost;
+    }
+
     public static void main(String[] args) throws Exception {
-        ShipAppApiServer server = new ShipAppApiServer();
+        // Kommandozeilenargumente parsen
+        int httpPort = DEFAULT_HTTP_PORT;
+        int subServerPort = DEFAULT_SUB_SERVER_PORT;
+        int oceanShipPort = DEFAULT_OCEAN_SHIP_PORT;
+        int oceanSubPort = DEFAULT_OCEAN_SUB_PORT;
+        String oceanHost = DEFAULT_OCEAN_HOST;
+
+        if (args.length >= 1) {
+            httpPort = Integer.parseInt(args[0]);
+        }
+        if (args.length >= 2) {
+            subServerPort = Integer.parseInt(args[1]);
+        }
+        if (args.length >= 3) {
+            oceanShipPort = Integer.parseInt(args[2]);
+        }
+        if (args.length >= 4) {
+            oceanSubPort = Integer.parseInt(args[3]);
+        }
+        if (args.length >= 5) {
+            oceanHost = args[4];
+        }
+
+        System.out.println("=== ShipAppApiServer Konfiguration ===");
+        System.out.printf("  HTTP-Port:           %d%n", httpPort);
+        System.out.printf("  Submarine-Server:    %d%n", subServerPort);
+        System.out.printf("  Ocean-Ship-Port:     %d%n", oceanShipPort);
+        System.out.printf("  Ocean-Sub-Port:      %d%n", oceanSubPort);
+        System.out.printf("  Ocean-Host:          %s%n", oceanHost);
+        System.out.println("======================================");
+
+        ShipAppApiServer server = new ShipAppApiServer(httpPort, subServerPort, 
+                                                        oceanShipPort, oceanSubPort, oceanHost);
         server.start();
     }
 
@@ -80,13 +151,13 @@ public class ShipAppApiServer {
         submarineRepository = new SubmarineRepository();
 
         // 2. Verbindung zum Ocean-Server
-        connectToOceanServer(OCEAN_HOST, OCEAN_SHIP_PORT);
+        connectToOceanServer(oceanHost, oceanShipPort);
 
         // 3. Submarine-Server starten
-        startSubmarineServer(SHIPAPP_SUB_SERVER_PORT, OCEAN_HOST, OCEAN_SUB_PORT);
+        startSubmarineServer(subServerPort, oceanHost, oceanSubPort);
 
         // 4. HTTP-Server starten
-        HttpServer httpServer = HttpServer.create(new InetSocketAddress(HTTP_PORT), 0);
+        HttpServer httpServer = HttpServer.create(new InetSocketAddress(httpPort), 0);
         httpServer.createContext("/api/state", new StateHandler());
         httpServer.createContext("/api/launch", new LaunchHandler());
         httpServer.createContext("/api/navigate", new NavigateHandler());
@@ -95,13 +166,14 @@ public class ShipAppApiServer {
         httpServer.createContext("/api/submarine/start", new SubStartHandler());
         httpServer.createContext("/api/submarine/pilot", new SubPilotHandler());
         httpServer.createContext("/api/submarine/kill", new SubKillHandler());
+        httpServer.createContext("/api/submarine/picture", new SubPictureHandler());
         httpServer.createContext("/api/submarine/measurements", new MeasurementsHandler());
         httpServer.createContext("/api/reset", new ResetHandler());
         httpServer.createContext("/api", this::handleRoot);
         httpServer.setExecutor(null);
         httpServer.start();
 
-        System.out.println("ShipAppApiServer läuft auf http://localhost:" + HTTP_PORT + "/api");
+        System.out.println("ShipAppApiServer läuft auf http://localhost:" + httpPort + "/api");
     }
 
     // ------------------------------------------------------------
@@ -310,7 +382,7 @@ public class ShipAppApiServer {
                 handleOptions(exchange);
                 return;
             }
-            startSubmarineProcess(OCEAN_HOST, OCEAN_SUB_PORT);
+            startSubmarineProcess(oceanHost, oceanSubPort);
             sendJson(exchange, 200, new JSONObject().put("status", "sent"));
         }
     }
@@ -379,6 +451,109 @@ public class ShipAppApiServer {
         }
     }
 
+    /**
+     * Handler zum Abrufen des letzten Bildes eines Submarines für die Live-View.
+     * GET /api/submarine/picture?id=<submarineId> - Letztes Bild als Base64
+     * 
+     * Sucht zuerst im Memory (aktive Session), dann in der Datenbank.
+     */
+    private class SubPictureHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+
+            // Query-Parameter auslesen
+            String query = exchange.getRequestURI().getQuery();
+            String submarineId = null;
+            if (query != null) {
+                for (String param : query.split("&")) {
+                    String[] pair = param.split("=");
+                    if (pair.length == 2 && "id".equals(pair[0])) {
+                        submarineId = pair[1];
+                    }
+                }
+            }
+
+            JSONObject resp = new JSONObject();
+            String base64 = null;
+            String foundId = submarineId;
+            long timestamp = 0;
+
+            // 1. Zuerst im Memory (aktive Session) suchen
+            SubmarineSession session;
+            synchronized (submarineSessions) {
+                if (submarineId == null || submarineId.isEmpty()) {
+                    // Erstes Submarine mit Bild nehmen
+                    session = submarineSessions.values().stream()
+                            .filter(s -> s.lastPictureHex != null && !s.lastPictureHex.isEmpty())
+                            .findFirst()
+                            .orElse(submarineSessions.values().stream().findFirst().orElse(null));
+                } else {
+                    session = submarineSessions.get(submarineId);
+                }
+            }
+
+            if (session != null) {
+                foundId = session.getIdSafe();
+                base64 = session.getLastPictureBase64();
+                timestamp = session.lastPictureTimestamp;
+            }
+
+            // 2. Falls kein Memory-Bild, aus Datenbank laden
+            if (base64 == null && submarineRepository != null) {
+                JSONObject dbPicture;
+                if (foundId != null && !foundId.isEmpty()) {
+                    dbPicture = submarineRepository.getLatestPicture(foundId);
+                } else {
+                    dbPicture = submarineRepository.getLatestPictureAny();
+                    if (dbPicture != null) {
+                        foundId = dbPicture.optString("submarine_id", null);
+                    }
+                }
+
+                if (dbPicture != null) {
+                    String hexFromDb = dbPicture.optString("picture_hex", null);
+                    timestamp = dbPicture.optLong("captured_at", 0);
+                    if (hexFromDb != null && !hexFromDb.isEmpty()) {
+                        base64 = hexToBase64(hexFromDb);
+                    }
+                }
+            }
+
+            // Response zusammenbauen
+            if (base64 != null) {
+                resp.put("id", foundId != null ? foundId : JSONObject.NULL);
+                resp.put("picture", base64);
+                resp.put("timestamp", timestamp);
+                resp.put("hasPicture", true);
+            } else {
+                resp.put("id", foundId != null ? foundId : JSONObject.NULL);
+                resp.put("picture", JSONObject.NULL);
+                resp.put("hasPicture", false);
+            }
+
+            sendJson(exchange, 200, resp);
+        }
+
+        private String hexToBase64(String hex) {
+            try {
+                int len = hex.length();
+                byte[] data = new byte[len / 2];
+                for (int i = 0; i < len; i += 2) {
+                    data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                                         + Character.digit(hex.charAt(i + 1), 16));
+                }
+                return java.util.Base64.getEncoder().encodeToString(data);
+            } catch (Exception e) {
+                System.err.println("Fehler bei Hex->Base64 Konvertierung: " + e.getMessage());
+                return null;
+            }
+        }
+    }
+
     private class ResetHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -432,7 +607,7 @@ public class ShipAppApiServer {
             shipOut = null;
 
             try {
-                connectToOceanServer(OCEAN_HOST, OCEAN_SHIP_PORT);
+                connectToOceanServer(oceanHost, oceanShipPort);
             } catch (IOException e) {
                 System.err.println("Fehler beim Reconnect zum Ocean-Server nach Reset: " + e.getMessage());
             }
@@ -693,6 +868,10 @@ public class ShipAppApiServer {
         private Vec lastDir;
         private int depth;
         private int distance;
+        
+        // Letztes empfangenes Bild für Live-View
+        private String lastPictureHex;
+        private long lastPictureTimestamp;
 
         SubmarineSession(Socket socket) throws IOException {
             super("ShipAppApi-SubmarineSession");
@@ -716,7 +895,36 @@ public class ShipAppApiServer {
             }
             jo.put("depth", depth);
             jo.put("distance", distance);
+            jo.put("hasPicture", lastPictureHex != null && !lastPictureHex.isEmpty());
+            jo.put("pictureTimestamp", lastPictureTimestamp);
             return jo;
+        }
+        
+        /**
+         * Gibt das letzte empfangene Bild als Base64 zurück.
+         */
+        String getLastPictureBase64() {
+            if (lastPictureHex == null || lastPictureHex.isEmpty()) {
+                return null;
+            }
+            // Hex-String in Bytes konvertieren, dann Base64
+            try {
+                byte[] bytes = hexStringToByteArray(lastPictureHex);
+                return java.util.Base64.getEncoder().encodeToString(bytes);
+            } catch (Exception e) {
+                System.err.println("Fehler bei Hex->Base64 Konvertierung: " + e.getMessage());
+                return null;
+            }
+        }
+        
+        private byte[] hexStringToByteArray(String hex) {
+            int len = hex.length();
+            byte[] data = new byte[len / 2];
+            for (int i = 0; i < len; i += 2) {
+                data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                                     + Character.digit(hex.charAt(i + 1), 16));
+            }
+            return data;
         }
 
         @Override
@@ -808,6 +1016,10 @@ public class ShipAppApiServer {
             if (hex == null || hex.isEmpty()) {
                 return;
             }
+
+            // Letztes Bild für Live-View speichern
+            this.lastPictureHex = hex;
+            this.lastPictureTimestamp = System.currentTimeMillis();
 
             String savedFilePath = null;
 

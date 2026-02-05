@@ -255,6 +255,60 @@ public class SubmarineRepository {
         }
     }
 
+    /**
+     * Gibt das neueste Bild eines Submarines als Hex-String zurück.
+     * 
+     * @param submarineId ID des Submarines
+     * @return JSONObject mit picture_hex und captured_at, oder null
+     */
+    public JSONObject getLatestPicture(String submarineId) {
+        ensureConnection();
+        if (connection == null) return null;
+
+        String sql = "SELECT picture_hex, captured_at FROM submarine_pictures WHERE submarine_id = ? ORDER BY captured_at DESC LIMIT 1";
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, submarineId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    JSONObject result = new JSONObject();
+                    result.put("picture_hex", rs.getString("picture_hex"));
+                    result.put("captured_at", rs.getTimestamp("captured_at").getTime());
+                    return result;
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Fehler beim Abrufen des letzten Bildes: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Gibt das neueste Bild irgendeines Submarines zurück.
+     * 
+     * @return JSONObject mit submarine_id, picture_hex und captured_at, oder null
+     */
+    public JSONObject getLatestPictureAny() {
+        ensureConnection();
+        if (connection == null) return null;
+
+        String sql = "SELECT submarine_id, picture_hex, captured_at FROM submarine_pictures ORDER BY captured_at DESC LIMIT 1";
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            if (rs.next()) {
+                JSONObject result = new JSONObject();
+                result.put("submarine_id", rs.getString("submarine_id"));
+                result.put("picture_hex", rs.getString("picture_hex"));
+                result.put("captured_at", rs.getTimestamp("captured_at").getTime());
+                return result;
+            }
+        } catch (SQLException e) {
+            System.err.println("Fehler beim Abrufen des letzten Bildes: " + e.getMessage());
+        }
+        return null;
+    }
+
     // ========================================================================
     // Crash-Ereignisse
     // ========================================================================
