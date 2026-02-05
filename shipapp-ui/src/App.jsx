@@ -86,8 +86,8 @@ function App() {
     name: 'Explorer1',
     x: 1,
     y: 1,
-    dx: 0,
-    dy: 0,
+    dx: 1,
+    dy: 1,
   })
 
   // Letztes Foto – wird nur gesetzt, wenn ein Foto erstellt wird
@@ -452,6 +452,8 @@ function App() {
                       <TextField
                         label="Richtung dx"
                         size="small"
+                        defaultValue={1}
+
                         type="number"
                         fullWidth
                         value={launchParams.dx}
@@ -468,6 +470,8 @@ function App() {
                         label="Richtung dy"
                         size="small"
                         type="number"
+                        defaultValue={1}
+
                         fullWidth
                         value={launchParams.dy}
                         onChange={(e) =>
