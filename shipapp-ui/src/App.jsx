@@ -22,7 +22,6 @@ import {
 } from '@mui/material'
 import {
   DirectionsBoat,
-  Radar,
   PhotoCamera,
   TravelExplore,
   PlayArrow,
@@ -85,7 +84,6 @@ function App() {
   const [state, setState] = useState(null)
   const [logs, setLogs] = useState([])
   const [isLaunching, setIsLaunching] = useState(false)
-  const [radarData, setRadarData] = useState({ echos: [], shipSector: null })
   const [launchParams, setLaunchParams] = useState({
     name: 'Explorer1',
     x: 1,
@@ -156,22 +154,6 @@ function App() {
       await refreshState()
     } catch (e) {
       appendLog(`Scan fehlgeschlagen: ${e.message}`)
-    }
-  }
-
-  const sendRadar = async () => {
-    try {
-      const res = await apiPost('/radar')
-      appendLog(`Radar: ${res?.echos?.length ?? 0} Echos`)
-      if (res?.echos && state?.ship?.sector) {
-        setRadarData({
-          echos: res.echos,
-          shipSector: { ...state.ship.sector },
-        })
-      }
-      await refreshState()
-    } catch (e) {
-      appendLog(`Radar fehlgeschlagen: ${e.message}`)
     }
   }
 
@@ -327,7 +309,6 @@ function App() {
 
   const clearAll = () => {
     setLogs([])
-    setRadarData({ echos: [], shipSector: null })
   }
 
   const resetSession = async () => {
@@ -335,47 +316,9 @@ function App() {
       await apiPost('/reset')
       appendLog('Session reset (Ship & Submarines zurückgesetzt)')
       setState(null)
-      setRadarData({ echos: [], shipSector: null })
     } catch (e) {
       appendLog(`Reset fehlgeschlagen: ${e.message}`)
     }
-  }
-
-  const renderRadarBlips = () => {
-    if (!radarData.echos || !radarData.shipSector) return null
-
-    const cx = 110
-    const cy = 110
-    const radius = 80
-
-    return radarData.echos
-      .filter((echo) => typeof echo.height === 'number' && echo.height > 0)
-      .map((echo, idx) => {
-        const sec = echo.sector?.vec2
-        if (!sec || sec.length !== 2) return null
-        const [sx, sy] = sec
-        const dx = sx - radarData.shipSector.x
-        const dy = sy - radarData.shipSector.y
-
-        if (dx === 0 && dy === 0) return null
-
-        const angle = Math.atan2(-dy, dx)
-        const r = radius * 0.9
-        const x = cx + r * Math.cos(angle)
-        const y = cy + r * Math.sin(angle)
-
-        return (
-          <circle
-            key={`${sx}-${sy}-${idx}`}
-            cx={x}
-            cy={y}
-            r={5}
-            fill="#f97316"
-            stroke="#fed7aa"
-            strokeWidth={1}
-          />
-        )
-      })
   }
 
   return (
@@ -717,13 +660,6 @@ function App() {
                         >
                           Scan
                         </Button>
-                        <Button
-                          variant="outlined"
-                          startIcon={<Radar />}
-                          onClick={sendRadar}
-                        >
-                          Radar
-                        </Button>
                       </Stack>
                     </Grid>
                     <Grid item xs={12} sm={6}>
@@ -737,89 +673,6 @@ function App() {
                       </Typography>
                     </Grid>
                   </Grid>
-                </Stack>
-              </Box>
-
-              {/* Radar */}
-              <Box
-                component="section"
-                aria-labelledby="radar-heading"
-                sx={{
-                  borderRadius: 3,
-                  p: 2,
-                  background:
-                    'linear-gradient(145deg, rgba(15,23,42,0.96), rgba(15,23,42,0.85))',
-                }}
-              >
-                <Stack spacing={2}>
-                  <Stack
-                    direction="row"
-                    alignItems="center"
-                    justifyContent="space-between"
-                  >
-                    <Typography id="radar-heading" variant="h6">
-                      Radar
-                    </Typography>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      startIcon={<Radar />}
-                      onClick={sendRadar}
-                    >
-                      Pulse
-                    </Button>
-                  </Stack>
-                  <Typography variant="body2" color="text.secondary">
-                    Visualisiere Echos im Umfeld des Schiffs. Leuchtende
-                    Punkte markieren zurückgeworfene Signale.
-                  </Typography>
-                  <Box
-                    sx={{
-                      mt: 1,
-                      display: 'flex',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        position: 'relative',
-                        width: { xs: 260, sm: 300, md: 340 },
-                        height: { xs: 260, sm: 300, md: 340 },
-                        borderRadius: '50%',
-                        overflow: 'hidden',
-                        boxShadow:
-                          '0 0 35px rgba(56,189,248,0.7), inset 0 0 25px rgba(15,23,42,0.95)',
-                        backgroundColor: '#020617',
-                      }}
-                      aria-label="Radaransicht der Umgebung"
-                      role="img"
-                    >
-                      <img
-                        src="/radar.gif"
-                        alt=""
-                        aria-hidden="true"
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                          mixBlendMode: 'screen',
-                          opacity: 0.9,
-                        }}
-                      />
-                      <svg
-                        width="100%"
-                        height="100%"
-                        viewBox="0 0 220 220"
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          pointerEvents: 'none',
-                        }}
-                      >
-                        {renderRadarBlips()}
-                      </svg>
-                    </Box>
-                  </Box>
                 </Stack>
               </Box>
 
