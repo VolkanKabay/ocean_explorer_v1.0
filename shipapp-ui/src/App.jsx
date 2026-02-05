@@ -282,6 +282,9 @@ function App() {
       } else if (e.key === 'ArrowRight') {
         // Nach rechts drehen
         pilotSubmarine(targetId, 'E')
+      } else if (key === 'k') {
+        // Foto aufnehmen
+        pilotSubmarine(targetId, 'None', 'take_photo')
       }
     }
     window.addEventListener('keydown', handler)
