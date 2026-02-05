@@ -25,8 +25,13 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Comparator;
+import java.util.Optional;
 
 /**
  * HTTP-API für die ShipApp, damit das React-Frontend die bestehende
@@ -166,6 +171,7 @@ public class ShipAppApiServer {
         httpServer.createContext("/api/submarine/start", new SubStartHandler());
         httpServer.createContext("/api/submarine/pilot", new SubPilotHandler());
         httpServer.createContext("/api/submarine/kill", new SubKillHandler());
+        httpServer.createContext("/api/submarine/picture/latest", new SubPictureLatestFileHandler());
         httpServer.createContext("/api/submarine/picture", new SubPictureHandler());
         httpServer.createContext("/api/submarine/measurements", new MeasurementsHandler());
         httpServer.createContext("/api/reset", new ResetHandler());
@@ -452,9 +458,78 @@ public class ShipAppApiServer {
     }
 
     /**
+     * Serves the latest picture file from disk (pictures/sub_*_*.png).
+     * GET /api/submarine/picture/latest?id=<submarineId> - optional filter by submarine id.
+     * Returns raw PNG so the UI can use it as img src when the JSON picture API returns nothing.
+     */
+    private class SubPictureLatestFileHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(405, -1);
+                return;
+            }
+            String query = exchange.getRequestURI().getQuery();
+            String submarineId = null;
+            if (query != null) {
+                for (String param : query.split("&")) {
+                    String[] pair = param.split("=");
+                    if (pair.length == 2 && "id".equals(pair[0])) {
+                        submarineId = pair[1];
+                    }
+                }
+            }
+            Path dir = Paths.get("pictures");
+            if (!Files.isDirectory(dir)) {
+                exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+                exchange.getResponseHeaders().add("Content-Type", "image/png");
+                exchange.sendResponseHeaders(204, -1);
+                return;
+            }
+            String prefix = submarineId != null && !submarineId.isEmpty()
+                    ? "sub_" + submarineId + "_"
+                    : "sub_";
+            Optional<Path> latest;
+            try (var stream = Files.list(dir)) {
+                latest = stream
+                        .filter(p -> p.getFileName().toString().endsWith(".png")
+                                && p.getFileName().toString().startsWith(prefix))
+                        .max(Comparator.comparing(p -> {
+                            try {
+                                return Files.getLastModifiedTime(p).toMillis();
+                            } catch (IOException e) {
+                                return 0L;
+                            }
+                        }));
+            } catch (IOException e) {
+                System.err.println("SubPictureLatestFile: " + e.getMessage());
+                latest = Optional.empty();
+            }
+            if (latest.isEmpty()) {
+                exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+                exchange.getResponseHeaders().add("Content-Type", "image/png");
+                exchange.sendResponseHeaders(204, -1);
+                return;
+            }
+            byte[] body = Files.readAllBytes(latest.get());
+            exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().add("Content-Type", "image/png");
+            exchange.getResponseHeaders().add("Cache-Control", "no-cache");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            }
+        }
+    }
+
+    /**
      * Handler zum Abrufen des letzten Bildes eines Submarines für die Live-View.
      * GET /api/submarine/picture?id=<submarineId> - Letztes Bild als Base64
-     * 
+     *
      * Sucht zuerst im Memory (aktive Session), dann in der Datenbank.
      */
     private class SubPictureHandler implements HttpHandler {

@@ -34,8 +34,6 @@ import {
   RotateRight,
   ClearAll,
   DeleteForever,
-  Visibility,
-  Refresh,
 } from '@mui/icons-material'
 import './App.css'
 
@@ -92,14 +90,14 @@ function App() {
     dy: 0,
   })
 
-  // Live-View State
-  const [liveViewData, setLiveViewData] = useState({
-    picture: null,
+  // Letztes Foto – wird nur gesetzt, wenn ein Foto erstellt wird
+  const [lastPicture, setLastPicture] = useState({
+    picture: null,   // data URL (base64) oder null
+    pictureUrl: null, // Fallback: URL zu /picture/latest
     id: null,
     timestamp: null,
     loading: false,
   })
-  const [autoRefreshLiveView, setAutoRefreshLiveView] = useState(false)
   const [selectedSubId, setSelectedSubId] = useState(null)
 
   const appendLog = useCallback((msg) => {
@@ -177,70 +175,53 @@ function App() {
     }
   }
 
-  // Live-View: Bild eines Submarines laden
-  const fetchLiveView = useCallback(async (subId) => {
-    setLiveViewData((prev) => ({ ...prev, loading: true }))
-    try {
+  // Nach take_photo: einmalig Bild holen (API-Polling, sonst Fallback auf Datei-URL)
+  const fetchPictureAfterTakePhoto = useCallback(
+    async (subId, maxAttempts = 8, intervalMs = 800) => {
+      setLastPicture((prev) => ({ ...prev, loading: true, id: subId }))
       const url = subId ? `/submarine/picture?id=${encodeURIComponent(subId)}` : '/submarine/picture'
-      const res = await apiGet(url)
-      if (res.picture && res.hasPicture) {
-        setLiveViewData({
-          picture: `data:image/png;base64,${res.picture}`,
-          id: res.id,
-          timestamp: res.timestamp,
-          loading: false,
-        })
-      } else {
-        setLiveViewData({
-          picture: null,
-          id: res.id || null,
-          timestamp: null,
-          loading: false,
-        })
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise((r) => setTimeout(r, attempt === 0 ? 600 : intervalMs))
+        try {
+          const res = await apiGet(url)
+          if (res.picture && res.hasPicture) {
+            setLastPicture({
+              picture: `data:image/png;base64,${res.picture}`,
+              pictureUrl: null,
+              id: res.id ?? subId,
+              timestamp: res.timestamp ?? null,
+              loading: false,
+            })
+            return
+          }
+        } catch (e) {
+          appendLog(`Bild Versuch ${attempt + 1}: ${e.message}`)
+        }
       }
-    } catch (e) {
-      appendLog(`Live-View fehlgeschlagen: ${e.message}`)
-      setLiveViewData((prev) => ({ ...prev, loading: false }))
-    }
-  }, [appendLog])
+      // Fallback: Bild einmalig über Datei-URL anzeigen
+      setLastPicture({
+        picture: null,
+        pictureUrl: `${API_BASE}/submarine/picture/latest?id=${encodeURIComponent(subId)}&t=${Date.now()}`,
+        id: subId,
+        timestamp: null,
+        loading: false,
+      })
+    },
+    [appendLog]
+  )
 
   // Submarine steuern - bei jeder Bewegung automatisch Foto machen
   const pilotSubmarine = useCallback(async (subId, route, action = '') => {
     try {
       await apiPost('/submarine/pilot', { id: subId, route, action })
       appendLog(`Pilot: id=${subId}, route=${route}, action=${action}`)
-      
-      // Bei Bewegungen automatisch ein Foto machen (außer bei explizitem take_photo oder locate)
-      const isMovement = route !== 'None' && action !== 'take_photo' && action !== 'locate'
-      
-      if (isMovement) {
-        // Kurz warten bis Bewegung abgeschlossen, dann Foto
-        setTimeout(async () => {
-          try {
-            await apiPost('/submarine/pilot', { id: subId, route: 'None', action: 'take_photo' })
-            // Bild laden nach kurzem Delay
-            setTimeout(() => fetchLiveView(subId), 600)
-          } catch (e) {
-            // Foto-Fehler ignorieren
-          }
-        }, 200)
-      } else if (action === 'take_photo') {
-        // Bei manuellem Foto auch Bild laden
-        setTimeout(() => fetchLiveView(subId), 800)
+      if (action === 'take_photo') {
+        fetchPictureAfterTakePhoto(subId)
       }
     } catch (e) {
       appendLog(`Pilot fehlgeschlagen: ${e.message}`)
     }
-  }, [appendLog, fetchLiveView])
-
-  // Auto-Refresh für Live-View
-  useEffect(() => {
-    if (!autoRefreshLiveView || !selectedSubId) return
-    const id = setInterval(() => {
-      fetchLiveView(selectedSubId)
-    }, 3000)
-    return () => clearInterval(id)
-  }, [autoRefreshLiveView, selectedSubId, fetchLiveView])
+  }, [appendLog, fetchPictureAfterTakePhoto])
 
   const activeSubs = state?.submarines ?? []
 
@@ -761,16 +742,13 @@ function App() {
                                   <ArrowDownward fontSize="small" />
                                 </IconButton>
                               </Tooltip>
-                              <Tooltip title="Foto">
+                              <Tooltip title="Foto aufnehmen und in Live-View anzeigen">
                                 <IconButton
                                   size="small"
-                                  onClick={() =>
-                                    pilotSubmarine(
-                                      s.id,
-                                      'None',
-                                      'take_photo',
-                                    )
-                                  }
+                                  onClick={() => {
+                                    setSelectedSubId(s.id)
+                                    pilotSubmarine(s.id, 'None', 'take_photo')
+                                  }}
                                   aria-label="Submarine Foto aufnehmen"
                                 >
                                   <PhotoCamera fontSize="small" />
@@ -837,10 +815,10 @@ function App() {
                 </Stack>
               </Box>
 
-              {/* Submarine Live-View */}
+              {/* Kamerabild – wird einmal angezeigt, wenn ein Foto erstellt wird */}
               <Box
                 component="section"
-                aria-labelledby="liveview-heading"
+                aria-labelledby="picture-heading"
                 sx={{
                   borderRadius: 3,
                   p: 2,
@@ -857,54 +835,28 @@ function App() {
                     gap={1}
                   >
                     <Stack direction="row" alignItems="center" spacing={1}>
-                      <Visibility sx={{ color: '#38bdf8' }} />
-                      <Typography id="liveview-heading" variant="h6">
-                        Submarine Live-View
+                      <PhotoCamera sx={{ color: '#38bdf8' }} />
+                      <Typography id="picture-heading" variant="h6">
+                        Kamerabild
                       </Typography>
                     </Stack>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Tooltip title="Bild jetzt laden">
-                        <span>
-                          <IconButton
-                            color="primary"
-                            onClick={() => fetchLiveView(selectedSubId)}
-                            disabled={liveViewData.loading || activeSubs.length === 0}
-                            size="small"
-                          >
-                            <Refresh />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title="Foto aufnehmen und laden">
-                        <span>
-                          <IconButton
-                            color="secondary"
-                            onClick={async () => {
-                              if (selectedSubId) {
-                                await pilotSubmarine(selectedSubId, 'None', 'take_photo')
-                                // Kurz warten, bis das Bild verarbeitet ist
-                                setTimeout(() => fetchLiveView(selectedSubId), 1500)
-                              }
-                            }}
-                            disabled={!selectedSubId || activeSubs.length === 0}
-                            size="small"
-                          >
-                            <PhotoCamera />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Chip
-                        label={autoRefreshLiveView ? 'Auto-Refresh AN' : 'Auto-Refresh AUS'}
-                        size="small"
-                        color={autoRefreshLiveView ? 'secondary' : 'default'}
-                        onClick={() => setAutoRefreshLiveView(!autoRefreshLiveView)}
-                        sx={{ cursor: 'pointer' }}
-                      />
-                    </Stack>
+                    <Tooltip title="Foto aufnehmen und anzeigen">
+                      <span>
+                        <IconButton
+                          color="secondary"
+                          onClick={() => {
+                            if (selectedSubId) pilotSubmarine(selectedSubId, 'None', 'take_photo')
+                          }}
+                          disabled={!selectedSubId || activeSubs.length === 0}
+                          size="small"
+                        >
+                          <PhotoCamera />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
                   </Stack>
                   <Typography variant="body2" color="text.secondary">
-                    Zeigt das letzte Kamerabild des ausgewählten Submarines.
-                    {selectedSubId && ` Aktiv: ${selectedSubId}`}
+                    Wird angezeigt, sobald ein Foto aufgenommen wurde.
                   </Typography>
                   <Box
                     sx={{
@@ -919,31 +871,27 @@ function App() {
                       border: '1px solid rgba(56,189,248,0.3)',
                     }}
                   >
-                    {liveViewData.loading ? (
+                    {lastPicture.loading ? (
                       <Typography color="text.secondary">Lade Bild...</Typography>
-                    ) : liveViewData.picture ? (
+                    ) : (lastPicture.picture || lastPicture.pictureUrl) ? (
                       <img
-                        src={liveViewData.picture}
-                        alt={`Live-View von ${liveViewData.id}`}
+                        src={lastPicture.picture || lastPicture.pictureUrl}
+                        alt={lastPicture.id ? `Foto von ${lastPicture.id}` : 'Kamerabild'}
                         style={{
                           maxWidth: '100%',
                           maxHeight: '500px',
                           objectFit: 'contain',
                         }}
                       />
-                    ) : activeSubs.length === 0 ? (
-                      <Typography color="text.secondary">
-                        Kein Submarine aktiv. Starte ein Submarine und mache ein Foto.
-                      </Typography>
                     ) : (
                       <Typography color="text.secondary">
-                        Kein Bild verfügbar. Klicke auf das Kamera-Icon, um ein Foto aufzunehmen.
+                        Noch kein Foto. Submarine wählen und Kamera-Icon klicken (oder bei einer Sub in der Liste).
                       </Typography>
                     )}
                   </Box>
-                  {liveViewData.timestamp && (
+                  {lastPicture.timestamp && (
                     <Typography variant="caption" color="text.secondary" align="center">
-                      Aufgenommen: {new Date(liveViewData.timestamp).toLocaleString()}
+                      Aufgenommen: {new Date(lastPicture.timestamp).toLocaleString()}
                     </Typography>
                   )}
                 </Stack>
