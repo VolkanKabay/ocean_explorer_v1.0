@@ -8,6 +8,19 @@ CREATE DATABASE IF NOT EXISTS ocean_explorer
 
 USE ocean_explorer;
 
+-- Tabelle für Schiffe (aktive Ship-Instanz und Metadaten)
+CREATE TABLE IF NOT EXISTS ships (
+    id VARCHAR(100) PRIMARY KEY,
+    name VARCHAR(100),
+    status ENUM('active', 'inactive') DEFAULT 'active',
+    current_sector_x INT,
+    current_sector_y INT,
+    dir_x INT,
+    dir_y INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
 -- Tabelle für Submarines
 CREATE TABLE IF NOT EXISTS submarines (
     id VARCHAR(100) PRIMARY KEY,

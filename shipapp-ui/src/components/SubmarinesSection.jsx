@@ -164,11 +164,22 @@ function SubmarinesSection({
               >
                 <ListItemText
                   primary={s.id}
-                  secondary={`pos [${s.pos?.x ?? '?'},${
-                    s.pos?.y ?? '?'
-                  },${s.pos?.z ?? '?'}], depth ${
-                    s.depth ?? '?'
-                  }m, dist ${s.distance ?? '?'}m`}
+                  secondary={
+                    <>
+                      {`pos [${s.pos?.x ?? '?'},${s.pos?.y ?? '?'},${
+                        s.pos?.z ?? '?'
+                      }], depth ${s.depth ?? '?'}m, dist ${
+                        s.distance ?? '?'
+                      }m`}
+                      {s.lastMessageText && (
+                        <>
+                          {' – '}
+                          {s.lastMessageText}
+                          {s.lastMessagePos && ` @ [${s.lastMessagePos.x},${s.lastMessagePos.y},${s.lastMessagePos.z}]`}
+                        </>
+                      )}
+                    </>
+                  }
                 />
               </ListItem>
             ))}

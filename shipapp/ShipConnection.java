@@ -44,6 +44,16 @@ public class ShipConnection {
     private final Object radarLock = new Object();
     private JSONArray lastRadarEchos = null;
 
+    // Optionales Repository, um Ship-Status direkt beim Launchen/Bewegen zu persistieren
+    private ShipRepository shipRepository;
+
+    /**
+     * Kann vom Server gesetzt werden, nachdem das Repository initialisiert wurde.
+     */
+    public void setShipRepository(ShipRepository shipRepository) {
+        this.shipRepository = shipRepository;
+    }
+
     public void connect(String host, int port) throws IOException {
         System.out.printf("Verbinde zu Ocean-Server %s:%d ...%n", host, port);
         shipSocket = new Socket(host, port);
@@ -99,6 +109,11 @@ public class ShipConnection {
         }
         System.out.printf("Ship erfolgreich gelauncht. ID=%s, Sektor=%s, Pos=%s%n",
                 shipId, currentSector, currentAbsPos);
+
+        // Direkt in DB updaten, falls Repository gesetzt ist
+        if (shipRepository != null && shipId != null) {
+            shipRepository.upsertActiveShip(shipId, null, currentSector, null);
+        }
     }
 
     private void handleShipInfoMessage(JSONObject msg) {
@@ -123,6 +138,11 @@ public class ShipConnection {
         }
         System.out.printf("Neue Schiffsposition: Sektor=%s, Richtung=%s, Pos=%s%n",
                 currentSector, currentDir, currentAbsPos);
+
+        // Bei jedem Move ebenfalls in DB nachziehen
+        if (shipRepository != null && shipId != null) {
+            shipRepository.upsertActiveShip(shipId, null, currentSector, currentDir);
+        }
     }
 
     private void handleShipCrash(JSONObject msg) {

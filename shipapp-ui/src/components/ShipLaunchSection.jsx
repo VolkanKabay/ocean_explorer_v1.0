@@ -18,8 +18,6 @@ function ShipLaunchSection({
         overflow: 'hidden',
         borderRadius: 3,
         p: 2,
-        background:
-          'linear-gradient(145deg, rgba(15,23,42,0.95), rgba(15,23,42,0.8))',
       }}
     >
       <Box
@@ -27,8 +25,7 @@ function ShipLaunchSection({
           position: 'absolute',
           inset: 0,
           pointerEvents: 'none',
-          background:
-            'radial-gradient(circle at top left, rgba(56,189,248,0.2), transparent 60%)',
+       
         }}
       />
       <Stack spacing={2} sx={{ position: 'relative' }}>
@@ -130,7 +127,7 @@ function ShipLaunchSection({
             {isLaunching ? 'Launching…' : 'Schiff launchen'}
           </Button>
           <Button variant="outlined" color="inherit" onClick={resetSession}>
-            Reset Session
+            End Session
           </Button>
         </Stack>
         {state?.ship && (

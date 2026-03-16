@@ -1,7 +1,7 @@
-import { Box, Button, Grid, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { Box, Button, Grid, IconButton, Stack, Tooltip, Typography, Chip } from '@mui/material'
 import { ArrowBack, ArrowDownward, ArrowForward, ArrowUpward, TravelExplore } from '@mui/icons-material'
 
-function NavigationSection({ sendNavigate, sendScan }) {
+function NavigationSection({ sendNavigate, sendScan, sendRadar, lastScan, lastRadar }) {
   return (
     <Box
       component="section"
@@ -102,16 +102,54 @@ function NavigationSection({ sendNavigate, sendScan }) {
             </Box>
             <Stack
               direction="row"
-              spacing={1}
-              sx={{ mt: 2, flexWrap: 'wrap' }}
+              spacing={2}
+              sx={{ mt: 3, flexWrap: 'wrap' }}
             >
               <Button
                 variant="outlined"
+                size="large"
                 startIcon={<TravelExplore />}
                 onClick={sendScan}
+                sx={{ px: 3, py: 1.5, fontSize: '0.95rem' }}
               >
                 Scan
               </Button>
+              <Button
+                variant="outlined"
+                size="large"
+                startIcon={<TravelExplore />}
+                onClick={sendRadar}
+                sx={{ px: 3, py: 1.5, fontSize: '0.95rem' }}
+              >
+                Radar
+              </Button>
+            </Stack>
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Stack spacing={1} sx={{ mt: { xs: 2, sm: 0 } }}>
+              <Typography variant="subtitle2">Letzte Messungen</Typography>
+              <Stack direction="row" spacing={1.5} flexWrap="wrap">
+                <Chip
+                  size="medium"
+                  color="primary"
+                  variant="outlined"
+                  label={
+                    lastScan
+                      ? `Scan: Tiefe=${lastScan.depth ?? '-'} m, σ=${lastScan.stddev ?? '-'}`
+                      : 'Scan: noch keine Messung'
+                  }
+                />
+                <Chip
+                  size="medium"
+                  color="secondary"
+                  variant="outlined"
+                  label={
+                    lastRadar
+                      ? `Radar: ${Array.isArray(lastRadar.echos) ? lastRadar.echos.length : 0} Echos`
+                      : 'Radar: noch keine Messung'
+                  }
+                />
+              </Stack>
             </Stack>
           </Grid>
         </Grid>

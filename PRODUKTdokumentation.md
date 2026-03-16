@@ -166,11 +166,11 @@ Bilder können serverseitig in der Datenbank und im Ordner `pictures/` gespeiche
 
 ---
 
-### 3.8 Reset Session
+### 3.8 End Session
 
 **Zweck:** Alles zurücksetzen: Schiff abmelden, alle Submarines beenden, Verbindung zum Ocean-Server neu aufbauen.
 
-**Anwendung:** Button **„Reset Session“** im Bereich **„Schiff starten“** klicken.
+**Anwendung:** Button **„End Session“** im Bereich **„Schiff starten“** klicken.
 
 **Ergebnis:** Zustand im Frontend wird geleert; Sie können danach erneut **„Schiff launchen“** ausführen.
 
@@ -262,7 +262,7 @@ Oder mehrere Frontend-Instanzen mit verschiedenen Ports starten (z. B. `npm ru
 | **Submarine steuern** | Bewegen (C, N, E, S, W, …), UP/DOWN, Foto, Locate |
 | **Kamerabild** | Foto der Submarine in der Live-View anzeigen |
 | **Submarine beenden** | Einzelne Submarine killen |
-| **Reset Session** | Schiff und alle Submarines zurücksetzen |
+| **End Session** | Schiff und alle Submarines zurücksetzen |
 | **Log** | Aktionen und Fehler protokollieren |
 | **API** | state, launch, navigate, scan, radar, submarine/*, reset, measurements |
 | **Datenbank** | Positionen, Messpunkte, Bilder, Crashes/Arises speichern und abfragen |

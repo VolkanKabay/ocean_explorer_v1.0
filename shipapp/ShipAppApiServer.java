@@ -64,8 +64,9 @@ public class ShipAppApiServer {
     private ServerSocket submarineServerSocket;
     private final Map<String, SubmarineSession> submarineSessions = new HashMap<>();
 
-    // Datenbank-Repository für Submarine-Daten
+    // Datenbank-Repositories
     private SubmarineRepository submarineRepository;
+    private ShipRepository shipRepository;
 
     /**
      * Konstruktor mit Standard-Konfiguration.
@@ -131,10 +132,14 @@ public class ShipAppApiServer {
     }
 
     public void start() throws Exception {
-        // 1. Datenbank-Repository initialisieren
+        // 1. Datenbank-Repositories initialisieren
         submarineRepository = new SubmarineRepository();
+        shipRepository = new ShipRepository();
 
         // 2. Verbindung zum Ocean-Server
+        //    und Repository in die ShipConnection injizieren,
+        //    damit Launch/Move-Events direkt in DB geschrieben werden.
+        shipConnection.setShipRepository(shipRepository);
         shipConnection.connect(oceanHost, oceanShipPort);
 
         // 3. Submarine-Server starten
@@ -221,6 +226,23 @@ public class ShipAppApiServer {
                             .put("x", currentDir.getX())
                             .put("y", currentDir.getY()));
                 }
+
+                // Ship-Status in DB updaten und zusätzliche Infos ausgeben
+                if (shipRepository != null) {
+                    // Name aktuell nicht vom Ocean-Server, daher null
+                    shipRepository.upsertActiveShip(shipId, null, currentSector, currentDir);
+                    var dbShip = shipRepository.getShip(shipId);
+                    if (dbShip != null) {
+                        ship.put("status", dbShip.optString("status", "active"));
+                        ship.put("createdAt", dbShip.optString("created_at", null));
+                        ship.put("lastSeen", dbShip.optString("last_seen", null));
+                    } else {
+                        ship.put("status", "active");
+                    }
+                } else {
+                    ship.put("status", "active");
+                }
+
                 root.put("ship", ship);
             } else {
                 root.put("ship", JSONObject.NULL);
@@ -761,6 +783,10 @@ public class ShipAppApiServer {
         private Vec lastDir;
         private int depth;
         private int distance;
+        // Letzte Submarine-Statusnachricht (z.B. Ergebnis von "locate")
+        private String lastMessageText;
+        private String lastMessageType;
+        private Vec lastMessagePos;
         
         // Letztes empfangenes Bild für Live-View
         private String lastPictureHex;
@@ -788,6 +814,22 @@ public class ShipAppApiServer {
             }
             jo.put("depth", depth);
             jo.put("distance", distance);
+            if (lastMessageText != null) {
+                jo.put("lastMessageText", lastMessageText);
+            } else {
+                jo.put("lastMessageText", JSONObject.NULL);
+            }
+            if (lastMessageType != null) {
+                jo.put("lastMessageType", lastMessageType);
+            } else {
+                jo.put("lastMessageType", JSONObject.NULL);
+            }
+            if (lastMessagePos != null) {
+                jo.put("lastMessagePos", new JSONObject()
+                        .put("x", lastMessagePos.getX())
+                        .put("y", lastMessagePos.getY())
+                        .put("z", lastMessagePos.getZ()));
+            }
             jo.put("hasPicture", lastPictureHex != null && !lastPictureHex.isEmpty());
             jo.put("pictureTimestamp", lastPictureTimestamp);
             return jo;
@@ -885,6 +927,9 @@ public class ShipAppApiServer {
             String text = msg.optString("text", "");
             JSONObject posJson = msg.optJSONObject("pos");
             Vec pos = posJson != null ? Vec.fromJson(posJson) : null;
+            this.lastMessageType = type;
+            this.lastMessageText = text;
+            this.lastMessagePos = pos;
             System.out.printf("Submarine-Message (id=%s, type=%s): %s, pos=%s%n",
                     submarineId, type, text, pos);
         }

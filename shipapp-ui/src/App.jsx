@@ -53,6 +53,10 @@ function App() {
   const [state, setState] = useState(null)
   const [logs, setLogs] = useState([])
   const [isLaunching, setIsLaunching] = useState(false)
+  const [isPatrolling, setIsPatrolling] = useState(false)
+  const [patrolTimerId, setPatrolTimerId] = useState(null)
+  const [lastScan, setLastScan] = useState(null)
+  const [lastRadar, setLastRadar] = useState(null)
   const [launchParams, setLaunchParams] = useState({
     name: 'Explorer1',
     x: 1,
@@ -120,11 +124,60 @@ function App() {
     try {
       const res = await apiPost('/scan')
       appendLog(`Scan: depth=${res.depth}, stddev=${res.stddev}`)
+      setLastScan(res)
       await refreshState()
     } catch (e) {
       appendLog(`Scan fehlgeschlagen: ${e.message}`)
     }
   }
+
+  // Einen einzelnen Patrouillen-Schritt ausführen:
+  // - Radar abfragen
+  // - Wenn frei: vorwärts fahren
+  // - Wenn Hindernis: Ausweichmanöver (abwechselnd rechts/links)
+  const patrolStep = useCallback(async () => {
+    try {
+      const res = await apiPost('/radar')
+      const echos = Array.isArray(res.echos) ? res.echos : []
+      setLastRadar(res)
+
+      if (echos.length === 0) {
+        // Kein Hindernis im 10×10 km Bereich vor dem Schiff: geradeaus
+        await sendNavigate('Center', 'Forward')
+      } else {
+        // Hindernis erkannt – einfache Ausweichlogik
+        // Wir wechseln pro Schritt die Seite, um ein Festfahren zu vermeiden.
+        setLogs((prev) => [
+          ...prev.slice(-199),
+          `[${new Date().toLocaleTimeString()}] Patrol: Radar-Echos=${echos.length}, Hindernis erkannt – weiche aus`,
+        ])
+        await sendNavigate(Math.random() < 0.5 ? 'Left' : 'Right', 'Forward')
+      }
+    } catch (e) {
+      appendLog(`Patrouille/Radar fehlgeschlagen: ${e.message}`)
+    }
+  }, [appendLog, sendNavigate])
+
+  const startPatrol = useCallback(() => {
+    if (isPatrolling || patrolTimerId) return
+    const id = setInterval(() => {
+      patrolStep()
+    }, 1200)
+    setPatrolTimerId(id)
+    setIsPatrolling(true)
+    appendLog('Patrouillenmodus gestartet')
+  }, [appendLog, isPatrolling, patrolStep, patrolTimerId])
+
+  const stopPatrol = useCallback(() => {
+    if (patrolTimerId) {
+      clearInterval(patrolTimerId)
+    }
+    setPatrolTimerId(null)
+    if (isPatrolling) {
+      appendLog('Patrouillenmodus gestoppt')
+    }
+    setIsPatrolling(false)
+  }, [appendLog, isPatrolling, patrolTimerId])
 
   const startSubmarine = async () => {
     try {
@@ -268,6 +321,7 @@ function App() {
 
   const resetSession = async () => {
     try {
+      stopPatrol()
       await apiPost('/reset')
       appendLog('Session reset (Ship & Submarines zurückgesetzt)')
       setState(null)
@@ -332,7 +386,7 @@ function App() {
             elevation={10}
             sx={{
               width: '100%',
-              maxWidth: 1320,
+              maxWidth: 1400,
               borderRadius: 4,
               p: { xs: 2, sm: 3 },
               border: '1px solid rgba(148,163,184,0.35)',
@@ -353,6 +407,22 @@ function App() {
               <NavigationSection
                 sendNavigate={sendNavigate}
                 sendScan={sendScan}
+                sendRadar={async () => {
+                  try {
+                    const res = await apiPost('/radar')
+                    setLastRadar(res)
+                    appendLog(
+                      `Radar: ${Array.isArray(res.echos) ? res.echos.length : 0} Echos`
+                    )
+                  } catch (e) {
+                    appendLog(`Radar fehlgeschlagen: ${e.message}`)
+                  }
+                }}
+                lastScan={lastScan}
+                lastRadar={lastRadar}
+                isPatrolling={isPatrolling}
+                startPatrol={startPatrol}
+                stopPatrol={stopPatrol}
               />
 
               <SubmarinesSection
