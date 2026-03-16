@@ -62,22 +62,20 @@ public class ShipAppApiServer {
     private final int subServerPort;
     private final int httpPort;
 
-    // Verbindung Ocean-Server (Ship-Port)
+    // Verbindung und Zustand des Schiffs werden in ShipConnection gekapselt
+    private final ShipConnection shipConnection = new ShipConnection();
+
+    // Legacy-Felder für alte Methoden, die nur noch aus Gründen der Kompatibilität existieren
     private Socket shipSocket;
     private BufferedReader shipIn;
     private PrintWriter shipOut;
-
-    // Zustand Schiff
     private String shipId;
     private Vec2D currentSector;
     private Vec2D currentDir;
     private Vec currentAbsPos;
-
-    // Letzte Scan/Radar-Ergebnisse
     private final Object scanLock = new Object();
     private Integer lastScanDepth = null;
     private Double lastScanStddev = null;
-
     private final Object radarLock = new Object();
     private JSONArray lastRadarEchos = null;
 
@@ -156,7 +154,7 @@ public class ShipAppApiServer {
         submarineRepository = new SubmarineRepository();
 
         // 2. Verbindung zum Ocean-Server
-        connectToOceanServer(oceanHost, oceanShipPort);
+        shipConnection.connect(oceanHost, oceanShipPort);
 
         // 3. Submarine-Server starten
         startSubmarineServer(subServerPort, oceanHost, oceanSubPort);
@@ -226,14 +224,17 @@ public class ShipAppApiServer {
                 return;
             }
             JSONObject root = new JSONObject();
+            String shipId = shipConnection.getShipId();
             if (shipId != null) {
                 JSONObject ship = new JSONObject();
                 ship.put("id", shipId);
+                Vec2D currentSector = shipConnection.getCurrentSector();
                 if (currentSector != null) {
                     ship.put("sector", new JSONObject()
                             .put("x", currentSector.getX())
                             .put("y", currentSector.getY()));
                 }
+                Vec2D currentDir = shipConnection.getCurrentDir();
                 if (currentDir != null) {
                     ship.put("dir", new JSONObject()
                             .put("x", currentDir.getX())
@@ -282,7 +283,7 @@ public class ShipAppApiServer {
             cmd.put("sector", sector.toJson());
             cmd.put("dir", dir.toJson());
 
-            sendToShip(cmd);
+            shipConnection.sendToShip(cmd);
 
             sendJson(exchange, 200, new JSONObject().put("status", "sent"));
         }
@@ -307,7 +308,7 @@ public class ShipAppApiServer {
             cmd.put("cmd", "navigate");
             cmd.put("rudder", rudder.name());
             cmd.put("course", course.name());
-            sendToShip(cmd);
+            shipConnection.sendToShip(cmd);
 
             sendJson(exchange, 200, new JSONObject().put("status", "sent"));
         }
@@ -320,28 +321,15 @@ public class ShipAppApiServer {
                 handleOptions(exchange);
                 return;
             }
-            synchronized (scanLock) {
-                lastScanDepth = null;
-                lastScanStddev = null;
-            }
+            shipConnection.resetScan();
 
             JSONObject cmd = new JSONObject();
             cmd.put("cmd", "scan");
-            sendToShip(cmd);
+            shipConnection.sendToShip(cmd);
 
-            Integer depth;
-            Double stddev;
-            long timeoutAt = System.currentTimeMillis() + 2000;
-            synchronized (scanLock) {
-                while (lastScanDepth == null && System.currentTimeMillis() < timeoutAt) {
-                    try {
-                        scanLock.wait(200);
-                    } catch (InterruptedException ignored) {
-                    }
-                }
-                depth = lastScanDepth;
-                stddev = lastScanStddev;
-            }
+            ShipConnection.ScanResult result = shipConnection.awaitScan(2000);
+            Integer depth = result.depth();
+            Double stddev = result.stddev();
             JSONObject resp = new JSONObject();
             resp.put("depth", depth != null ? depth : JSONObject.NULL);
             resp.put("stddev", stddev != null ? stddev : JSONObject.NULL);
@@ -356,25 +344,13 @@ public class ShipAppApiServer {
                 handleOptions(exchange);
                 return;
             }
-            synchronized (radarLock) {
-                lastRadarEchos = null;
-            }
+            shipConnection.resetRadar();
 
             JSONObject cmd = new JSONObject();
             cmd.put("cmd", "radar");
-            sendToShip(cmd);
+            shipConnection.sendToShip(cmd);
 
-            JSONArray echos;
-            long timeoutAt = System.currentTimeMillis() + 2000;
-            synchronized (radarLock) {
-                while (lastRadarEchos == null && System.currentTimeMillis() < timeoutAt) {
-                    try {
-                        radarLock.wait(200);
-                    } catch (InterruptedException ignored) {
-                    }
-                }
-                echos = lastRadarEchos;
-            }
+            JSONArray echos = shipConnection.awaitRadar(2000);
             JSONObject resp = new JSONObject();
             resp.put("echos", echos != null ? echos : new JSONArray());
             sendJson(exchange, 200, resp);
@@ -638,28 +614,19 @@ public class ShipAppApiServer {
             }
 
             // Schiff abmelden
+            String shipId = shipConnection.getShipId();
             if (shipId != null) {
                 try {
                     JSONObject cmd = new JSONObject();
                     cmd.put("cmd", "exit");
-                    sendToShip(cmd);
+                    shipConnection.sendToShip(cmd);
                 } catch (Exception e) {
                     System.err.println("Fehler beim Senden von exit: " + e.getMessage());
                 }
             }
 
-            shipId = null;
-            currentSector = null;
-            currentDir = null;
-            currentAbsPos = null;
-
-            synchronized (scanLock) {
-                lastScanDepth = null;
-                lastScanStddev = null;
-            }
-            synchronized (radarLock) {
-                lastRadarEchos = null;
-            }
+            shipConnection.resetScan();
+            shipConnection.resetRadar();
 
             // alle Submarines trennen
             synchronized (submarineSessions) {
@@ -669,20 +636,9 @@ public class ShipAppApiServer {
                 submarineSessions.clear();
             }
 
-            // bestehende Verbindung zum Ocean-Server schließen und neu aufbauen,
-            // damit ein wirklich frisches Spiel möglich ist
+            // bestehende Verbindung zum Ocean-Server neu aufbauen
             try {
-                if (shipSocket != null && !shipSocket.isClosed()) {
-                    shipSocket.close();
-                }
-            } catch (IOException ignored) {
-            }
-            shipSocket = null;
-            shipIn = null;
-            shipOut = null;
-
-            try {
-                connectToOceanServer(oceanHost, oceanShipPort);
+                shipConnection.connect(oceanHost, oceanShipPort);
             } catch (IOException e) {
                 System.err.println("Fehler beim Reconnect zum Ocean-Server nach Reset: " + e.getMessage());
             }
