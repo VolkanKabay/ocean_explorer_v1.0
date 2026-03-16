@@ -650,16 +650,7 @@ function App() {
                         </Button>
                       </Stack>
                     </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ mt: { xs: 1, sm: 0 } }}
-                      >
-                        Tipp: Halte die Hand auf WASD und den Pfeiltasten, um
-                        Schiff und Submarines parallel zu steuern.
-                      </Typography>
-                    </Grid>
+                   
                   </Grid>
                 </Stack>
               </Box>
