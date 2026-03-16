@@ -1,0 +1,25 @@
+Version 1.4:
+oceanserver 0.96
+- verbose ueber oceanserver.conf setzbar
+- Bugfix: korrekte Sektorkoordinaten bei CmdCrash
+- Bugfix: Auch ohne CmdExit werden beim Verbindungsabbruch Schiffe entfernt
+- Beim Starten von oceanserver.jar (bzw. oceanstarter.jar) kann als Argument "-autostart" angegeben werden. 
+  Der OceanServer startet automatisch mit den Defaultwerten aus Maske bzw. "oceanserver.conf".
+
+Version 1.3:
+oceanserver 0.95
+- Bugfix: Radarabfragen auch bei Sektorkoordinaten [x,99] oder [99,y] moeglich
+- Bugfix: Verbessertes Fehlerhandling bei ungueltigen JSON-Parametern
+- Bei CmdExit wird vom Schiff evtl. ausgesetzes Submarine beendet
+- ShipSessions werden beim Schließen der Verbindung sicher entfernt
+- CmdLaunch: verbesserte Pruefung/Fehlermeldung beim Launch auf Land und breits besetzten Sektoren
+
+Version 1.2:
+ - Anwendungen jetzt auf MacOS lauffaehig
+ 
+oceanserver 0.93
+- Pruefung auf gueltige Richtungsvektoren bei CmdLaunch
+- Bugfix: CmdLaunch - Richtungsvektor [0, -1] jetzt zulaessig
+
+submarine 0.93
+- Bugfix: alle Submarine Ausrichtungen beim Submit moeglich
