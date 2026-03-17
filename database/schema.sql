@@ -8,28 +8,14 @@ CREATE DATABASE IF NOT EXISTS ocean_explorer
 
 USE ocean_explorer;
 
--- Tabelle für Schiffe (aktive Ship-Instanz und Metadaten)
-CREATE TABLE IF NOT EXISTS ships (
-    id VARCHAR(100) PRIMARY KEY,
-    name VARCHAR(100),
-    status ENUM('active', 'inactive') DEFAULT 'active',
-    current_sector_x INT,
-    current_sector_y INT,
-    dir_x INT,
-    dir_y INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-
--- Tabelle für Submarines
 CREATE TABLE IF NOT EXISTS submarines (
     id VARCHAR(100) PRIMARY KEY,
-    ship_id VARCHAR(100) NOT NULL,
+    ship_id VARCHAR(100) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     status ENUM('active', 'crashed', 'surfaced') DEFAULT 'active',
-    INDEX idx_ship_id (ship_id),
-    INDEX idx_status (status)
+    INDEX idx_status (status),
+    INDEX idx_ship_id (ship_id)
 );
 
 -- Tabelle für Submarine-Positionen (Tracking)
@@ -50,7 +36,7 @@ CREATE TABLE IF NOT EXISTS submarine_positions (
     INDEX idx_recorded_at (recorded_at)
 );
 
--- Tabelle für Messpunkte (Measure-Daten)
+-- Tabelle für Messpunkte (Measure-Events)
 CREATE TABLE IF NOT EXISTS measurements (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     submarine_id VARCHAR(100) NOT NULL,
@@ -60,8 +46,7 @@ CREATE TABLE IF NOT EXISTS measurements (
     recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (submarine_id) REFERENCES submarines(id) ON DELETE CASCADE,
     INDEX idx_submarine_id (submarine_id),
-    INDEX idx_recorded_at (recorded_at),
-    INDEX idx_position (vec_x, vec_y, vec_z)
+    INDEX idx_recorded_at (recorded_at)
 );
 
 -- Tabelle für Bilder (Picture-Daten)
@@ -70,10 +55,10 @@ CREATE TABLE IF NOT EXISTS submarine_pictures (
     submarine_id VARCHAR(100) NOT NULL,
     picture_hex LONGTEXT NOT NULL,
     file_path VARCHAR(500),
-    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (submarine_id) REFERENCES submarines(id) ON DELETE CASCADE,
     INDEX idx_submarine_id (submarine_id),
-    INDEX idx_recorded_at (recorded_at)
+    INDEX idx_captured_at (captured_at)
 );
 
 -- Tabelle für Crash-Ereignisse
@@ -103,11 +88,10 @@ CREATE TABLE IF NOT EXISTS submarine_arises (
     INDEX idx_submarine_id (submarine_id)
 );
 
--- View für aktuelle Submarine-Übersicht
+-- View für aktuelle Submarine-Übersicht (ohne Ships/Measurements)
 CREATE OR REPLACE VIEW submarine_overview AS
 SELECT 
     s.id,
-    s.ship_id,
     s.status,
     s.created_at,
     s.last_seen,
@@ -115,8 +99,7 @@ SELECT
     p.pos_y,
     p.pos_z,
     p.depth,
-    p.distance,
-    (SELECT COUNT(*) FROM measurements m WHERE m.submarine_id = s.id) AS total_measurements
+    p.distance
 FROM submarines s
 LEFT JOIN submarine_positions p ON s.id = p.submarine_id
 WHERE p.id = (

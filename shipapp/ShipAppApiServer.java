@@ -64,9 +64,8 @@ public class ShipAppApiServer {
     private ServerSocket submarineServerSocket;
     private final Map<String, SubmarineSession> submarineSessions = new HashMap<>();
 
-    // Datenbank-Repositories
+    // Datenbank-Repositories (nur Submarine-Daten werden persistiert)
     private SubmarineRepository submarineRepository;
-    private ShipRepository shipRepository;
 
     /**
      * Konstruktor mit Standard-Konfiguration.
@@ -132,14 +131,10 @@ public class ShipAppApiServer {
     }
 
     public void start() throws Exception {
-        // 1. Datenbank-Repositories initialisieren
+        // 1. Datenbank-Repositories initialisieren (nur Submarines)
         submarineRepository = new SubmarineRepository();
-        shipRepository = new ShipRepository();
 
         // 2. Verbindung zum Ocean-Server
-        //    und Repository in die ShipConnection injizieren,
-        //    damit Launch/Move-Events direkt in DB geschrieben werden.
-        shipConnection.setShipRepository(shipRepository);
         shipConnection.connect(oceanHost, oceanShipPort);
 
         // 3. Submarine-Server starten
