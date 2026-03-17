@@ -150,6 +150,7 @@ public class ShipAppApiServer {
         httpServer.createContext("/api/submarine/start", new SubStartHandler());
         httpServer.createContext("/api/submarine/pilot", new SubPilotHandler());
         httpServer.createContext("/api/submarine/kill", new SubKillHandler());
+        httpServer.createContext("/api/submarine/history", new SubHistoryHandler());
         httpServer.createContext("/api/submarine/picture/latest", new SubPictureLatestFileHandler());
         httpServer.createContext("/api/submarine/picture", new SubPictureHandler());
         httpServer.createContext("/api/submarine/measurements", new MeasurementsHandler());
@@ -427,7 +428,43 @@ public class ShipAppApiServer {
             synchronized (submarineSessions) {
                 submarineSessions.remove(session.getIdSafe());
             }
+
+            // Status in der Datenbank auf "terminated" setzen.
+            // Falls die echte Submarine-ID (vom Ocean-Server) nicht bekannt ist,
+            // wird auf die im HTTP-Request übergebene ID zurückgegriffen.
+            if (submarineRepository != null) {
+                String subId = session.getSubmarineId();
+                if (subId == null || subId.isBlank()) {
+                    subId = (id != null && !id.isBlank()) ? id : session.getIdSafe();
+                }
+                submarineRepository.updateSubmarineStatus(subId, "terminated");
+            }
+
             sendJson(exchange, 200, new JSONObject().put("status", "killed"));
+        }
+    }
+
+    /**
+     * Liefert eine Übersicht aller jemals gespeicherten Submarines inkl. Status und letzter Position/Zeit.
+     * GET /api/submarine/history
+     */
+    private class SubHistoryHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+
+            if (submarineRepository == null) {
+                sendJson(exchange, 500, new JSONObject().put("error", "Datenbank nicht verfügbar"));
+                return;
+            }
+
+            var subs = submarineRepository.getSubmarineOverview();
+            JSONObject resp = new JSONObject();
+            resp.put("submarines", subs);
+            sendJson(exchange, 200, resp);
         }
     }
 
@@ -1037,6 +1074,9 @@ public class ShipAppApiServer {
             }
             out.println(cmd.toString());
         }
+
+        String getSubmarineId() {
+            return submarineId;
+        }
     }
 }
-

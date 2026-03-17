@@ -113,9 +113,9 @@ public class SubmarineRepository {
 
     /**
      * Aktualisiert den Status eines Submarines.
-     * 
+     *
      * @param submarineId ID des Submarines
-     * @param status neuer Status (active, crashed, surfaced)
+     * @param status      neuer Status (z.B. active, crashed, surfaced, terminated)
      */
     public void updateSubmarineStatus(String submarineId, String status) {
         ensureConnection();
@@ -505,5 +505,49 @@ public class SubmarineRepository {
             System.err.println("Fehler beim Zählen aller Messpunkte: " + e.getMessage());
         }
         return 0;
+    }
+
+    /**
+     * Liefert eine Übersicht aller jemals gespeicherten Submarines inkl. letztem Standort.
+     * Verwendet die View submarine_overview aus dem Schema.
+     *
+     * @return JSONArray mit Objekten (id, status, created_at, last_seen, pos_x, pos_y, pos_z, depth, distance)
+     */
+    public JSONArray getSubmarineOverview() {
+        ensureConnection();
+        JSONArray result = new JSONArray();
+        if (connection == null) return result;
+
+        String sql = """
+                SELECT id, status, created_at, last_seen,
+                       pos_x, pos_y, pos_z, depth, distance
+                FROM submarine_overview
+                ORDER BY created_at DESC
+                """;
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                JSONObject row = new JSONObject();
+                row.put("id", rs.getString("id"));
+                row.put("status", rs.getString("status"));
+                Timestamp createdAt = rs.getTimestamp("created_at");
+                Timestamp lastSeen = rs.getTimestamp("last_seen");
+                row.put("created_at", createdAt != null ? createdAt.toString() : null);
+                row.put("last_seen", lastSeen != null ? lastSeen.toString() : null);
+
+                row.put("pos_x", rs.getObject("pos_x") != null ? rs.getDouble("pos_x") : JSONObject.NULL);
+                row.put("pos_y", rs.getObject("pos_y") != null ? rs.getDouble("pos_y") : JSONObject.NULL);
+                row.put("pos_z", rs.getObject("pos_z") != null ? rs.getDouble("pos_z") : JSONObject.NULL);
+                row.put("depth", rs.getObject("depth") != null ? rs.getInt("depth") : JSONObject.NULL);
+                row.put("distance", rs.getObject("distance") != null ? rs.getInt("distance") : JSONObject.NULL);
+
+                result.put(row);
+            }
+        } catch (SQLException e) {
+            System.err.println("Fehler beim Abrufen der Submarine-Übersicht: " + e.getMessage());
+        }
+
+        return result;
     }
 }

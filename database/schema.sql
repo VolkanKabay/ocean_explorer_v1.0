@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS submarines (
     ship_id VARCHAR(100) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    status ENUM('active', 'crashed', 'surfaced') DEFAULT 'active',
+    status ENUM('active', 'crashed', 'surfaced', 'terminated') DEFAULT 'active',
     INDEX idx_status (status),
     INDEX idx_ship_id (ship_id)
 );
