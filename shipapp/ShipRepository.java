@@ -25,7 +25,7 @@ public class ShipRepository {
     private static final int DB_PORT = 3306;
     private static final String DB_NAME = "ocean_explorer";
     private static final String DB_USER = "root";
-    private static final String DB_PASSWORD = ""; // Anpassen falls Passwort gesetzt
+    private static final String DB_PASSWORD = "";
 
     private Connection connection;
 

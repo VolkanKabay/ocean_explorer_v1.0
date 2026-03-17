@@ -1,7 +1,5 @@
 package shipapp;
 
-import ocean.Course;
-import ocean.Rudder;
 import ocean.Vec;
 import ocean.Vec2D;
 import org.json.JSONArray;
@@ -25,18 +23,15 @@ import java.nio.charset.StandardCharsets;
  */
 public class ShipConnection {
 
-    // Verbindung Ocean-Server (Ship-Port)
     private Socket shipSocket;
     private BufferedReader shipIn;
     private PrintWriter shipOut;
 
-    // Zustand Schiff
     private String shipId;
     private Vec2D currentSector;
     private Vec2D currentDir;
     private Vec currentAbsPos;
 
-    // Letzte Scan/Radar-Ergebnisse
     private final Object scanLock = new Object();
     private Integer lastScanDepth = null;
     private Double lastScanStddev = null;

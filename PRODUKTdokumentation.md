@@ -186,6 +186,24 @@ Bilder können serverseitig in der Datenbank und im Ordner `pictures/` gespeiche
 
 ---
 
+### 3.10 Submarine-Historie (alle jemals gestarteten Submarines)
+
+**Zweck:** Übersicht über alle Submarines, die jemals in diesem System gestartet wurden – inklusive Status, letzter bekannter Position und Zeitstempeln.
+
+**Anwendung im Frontend:**
+
+- Im Abschnitt **„Submarine-Historie“** (rechte Seite unterhalb von „Kamerabild“ und „Submarines“) wird eine Liste angezeigt.
+- Jede Zeile zeigt typischerweise:
+  - **Submarine-ID**
+  - **Status** (`active`, `terminated`) mit farbigem Chip
+  - **Erstellt** (Zeitpunkt des ersten Auftauchens)
+  - **Letzt gesehen** (Zeitpunkt der letzten Aktivität)
+  - **Letzte Position** inkl. Tiefe und Distanz (falls bekannt)
+
+**Datenquelle:** Die Historie kommt aus der Datenbank über den Endpunkt `GET /api/submarine/history` (siehe Abschnitt **4**). Sie ist unabhängig von der aktuellen Session; auch frühere Submarines werden hier angezeigt.
+
+---
+
 ## 4. API-Features (für Entwickler/Integration)
 
 Die folgenden Endpunkte stehen zusätzlich zur UI-Funktionalität zur Verfügung:
@@ -214,7 +232,7 @@ Die folgenden Endpunkte stehen zusätzlich zur UI-Funktionalität zur Verfügung
 
 Wenn MySQL eingerichtet ist, speichert das Backend automatisch:
 
-- **Submarines:** ID, ship_id, Status (active/crashed/surfaced)
+- **Submarines:** ID, ship_id, Status (active/terminated)
 - **Positionshistorie:** submarine_positions (x, y, z, Richtung, Tiefe, Distanz)
 - **Messpunkte:** measurements (x, y, z pro Submarine)
 - **Bilder:** submarine_pictures (Hex-Daten, Dateipfad)
@@ -259,14 +277,15 @@ Oder mehrere Frontend-Instanzen mit verschiedenen Ports starten (z. B. `npm ru
 | **Schiff navigieren** | Schiff mit WASD + Q/E oder Buttons bewegen |
 | **Scan** | Tiefe und Stddev am aktuellen Stand messen |
 | **Submarine starten** | Tauchroboter im Sektor starten |
-| **Submarine steuern** | Bewegen (C, N, E, S, W, …), UP/DOWN, Foto, Locate |
-| **Kamerabild** | Foto der Submarine in der Live-View anzeigen |
+| **Submarine steuern** | Bewegen (C, N, E, S, W, …), UP/DOWN, Foto (inkl. Live-View), Locate |
+| **Kamerabild** | Foto der Submarine in der Live-View anzeigen (inkl. Fallback über neueste PNG-Datei) |
+| **Submarine-Historie** | Liste aller jemals gestarteten Submarines mit Status, Zeitstempeln und letzter Position |
 | **Submarine beenden** | Einzelne Submarine killen |
 | **End Session** | Schiff und alle Submarines zurücksetzen |
 | **Log** | Aktionen und Fehler protokollieren |
 | **API** | state, launch, navigate, scan, radar, submarine/*, reset, measurements |
-| **Datenbank** | Positionen, Messpunkte, Bilder, Crashes/Arises speichern und abfragen |
+| **Datenbank** | Positionen, Messpunkte, Bilder, Crashes/Arises speichern und abfragen; Basis für Submarine-Historie |
 
 ---
 
-*Stand: Projekt Ocean Explorer v1.0*
+*Stand: Projekt Ocean Explorer v1.4 (mit Submarine-Historie und erweiterten Datenbankfunktionen)*

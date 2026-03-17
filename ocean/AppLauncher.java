@@ -1,7 +1,6 @@
 package ocean;
 
 import java.util.ArrayList;
-import java.util.concurrent.TimeUnit;
 
 public class AppLauncher {
 
@@ -41,7 +40,6 @@ public class AppLauncher {
 		pb.inheritIO();
 		try {
 			Process p = pb.start();
-			boolean rc = p.waitFor(1000, TimeUnit.MILLISECONDS);
 			int exitVal = 1;
 			try {
 				exitVal = p.exitValue();

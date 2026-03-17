@@ -6,6 +6,7 @@ import ShipLaunchSection from './components/ShipLaunchSection.jsx'
 import NavigationSection from './components/NavigationSection.jsx'
 import SubmarinesSection from './components/SubmarinesSection.jsx'
 import PictureSection from './components/PictureSection.jsx'
+import SubmarineHistorySection from './components/SubmarineHistorySection.jsx'
 import LogSection from './components/LogSection.jsx'
 
 const API_BASE = 'http://localhost:8080/api'
@@ -52,6 +53,7 @@ const theme = createTheme({
 function App() {
   const [state, setState] = useState(null)
   const [logs, setLogs] = useState([])
+  const [subHistory, setSubHistory] = useState([])
   const [isLaunching, setIsLaunching] = useState(false)
   const [isPatrolling, setIsPatrolling] = useState(false)
   const [patrolTimerId, setPatrolTimerId] = useState(null)
@@ -65,10 +67,9 @@ function App() {
     dy: 1,
   })
 
-  // Letztes Foto – wird nur gesetzt, wenn ein Foto erstellt wird
   const [lastPicture, setLastPicture] = useState({
-    picture: null,   // data URL (base64) oder null
-    pictureUrl: null, // Fallback: URL zu /picture/latest
+    picture: null,
+    pictureUrl: null,
     id: null,
     timestamp: null,
     loading: false,
@@ -91,11 +92,24 @@ function App() {
     }
   }, [appendLog])
 
+  const refreshSubHistory = useCallback(async () => {
+    try {
+      const res = await apiGet('/submarine/history')
+      setSubHistory(Array.isArray(res.submarines) ? res.submarines : [])
+    } catch (e) {
+      appendLog(`Fehler beim Laden der Submarine-Historie: ${e.message}`)
+    }
+  }, [appendLog])
+
   useEffect(() => {
     refreshState()
-    const id = setInterval(refreshState, 2000)
+    refreshSubHistory()
+    const id = setInterval(() => {
+      refreshState()
+      refreshSubHistory()
+    }, 2000)
     return () => clearInterval(id)
-  }, [refreshState])
+  }, [refreshState, refreshSubHistory])
 
   const handleLaunch = async () => {
     setIsLaunching(true)
@@ -131,10 +145,6 @@ function App() {
     }
   }
 
-  // Einen einzelnen Patrouillen-Schritt ausführen:
-  // - Radar abfragen
-  // - Wenn frei: vorwärts fahren
-  // - Wenn Hindernis: Ausweichmanöver (abwechselnd rechts/links)
   const patrolStep = useCallback(async () => {
     try {
       const res = await apiPost('/radar')
@@ -142,11 +152,8 @@ function App() {
       setLastRadar(res)
 
       if (echos.length === 0) {
-        // Kein Hindernis im 10×10 km Bereich vor dem Schiff: geradeaus
         await sendNavigate('Center', 'Forward')
       } else {
-        // Hindernis erkannt – einfache Ausweichlogik
-        // Wir wechseln pro Schritt die Seite, um ein Festfahren zu vermeiden.
         setLogs((prev) => [
           ...prev.slice(-199),
           `[${new Date().toLocaleTimeString()}] Patrol: Radar-Echos=${echos.length}, Hindernis erkannt – weiche aus`,
@@ -199,7 +206,6 @@ function App() {
     }
   }
 
-  // Nach take_photo: einmalig Bild holen (API-Polling, sonst Fallback auf Datei-URL)
   const fetchPictureAfterTakePhoto = useCallback(
     async (subId, maxAttempts = 8, intervalMs = 800) => {
       setLastPicture((prev) => ({ ...prev, loading: true, id: subId }))
@@ -222,7 +228,6 @@ function App() {
           appendLog(`Bild Versuch ${attempt + 1}: ${e.message}`)
         }
       }
-      // Fallback: Bild einmalig über Datei-URL anzeigen
       setLastPicture({
         picture: null,
         pictureUrl: `${API_BASE}/submarine/picture/latest?id=${encodeURIComponent(subId)}&t=${Date.now()}`,
@@ -234,7 +239,6 @@ function App() {
     [appendLog]
   )
 
-  // Submarine steuern - bei jeder Bewegung automatisch Foto machen
   const pilotSubmarine = useCallback(async (subId, route, action = '') => {
     try {
       await apiPost('/submarine/pilot', { id: subId, route, action })
@@ -249,7 +253,6 @@ function App() {
 
   const activeSubs = state?.submarines ?? []
 
-  // Wenn die aktuelle Auswahl nicht mehr existiert, auf erstes Sub umschalten oder auf null
   useEffect(() => {
     if (!activeSubs || activeSubs.length === 0) {
       setSelectedSubId(null)
@@ -261,17 +264,11 @@ function App() {
     }
   }, [activeSubs, selectedSubId])
 
-  // Tastatursteuerung:
-  // - WASD + Q/E: steuern immer das Schiff (Navigate)
-  // - Pfeiltasten: steuern (falls vorhanden) das erste Submarine
   useEffect(() => {
     const handler = (e) => {
       if (e.target.tagName === 'INPUT') return
       const key = e.key.toLowerCase()
       const hasSub = activeSubs.length > 0
-
-      // Schiff steuern mit WASD + Q/E
-      // W = vorwärts, A = vorwärts-links, D = vorwärts-rechts, S = rückwärts
       if (key === 'w') {
         sendNavigate('Center', 'Forward')
       } else if (key === 's') {
@@ -286,7 +283,6 @@ function App() {
         sendNavigate('Left', 'Forward')
       }
 
-      // Submarine mit Pfeiltasten (falls vorhanden)
       if (!hasSub) return
 
       const targetId =
@@ -295,19 +291,14 @@ function App() {
           : activeSubs[0].id
 
       if (e.key === 'ArrowUp') {
-        // Geradeaus fahren
         pilotSubmarine(targetId, 'C')
       } else if (e.key === 'ArrowDown') {
-        // Abtauchen
         pilotSubmarine(targetId, 'DOWN')
       } else if (e.key === 'ArrowLeft') {
-        // Nach links drehen
         pilotSubmarine(targetId, 'W')
       } else if (e.key === 'ArrowRight') {
-        // Nach rechts drehen
         pilotSubmarine(targetId, 'E')
       } else if (key === 'k') {
-        // Foto aufnehmen
         pilotSubmarine(targetId, 'None', 'take_photo')
       }
     }
@@ -325,6 +316,7 @@ function App() {
       await apiPost('/reset')
       appendLog('Session reset (Ship & Submarines zurückgesetzt)')
       setState(null)
+      setSubHistory([])
     } catch (e) {
       appendLog(`Reset fehlgeschlagen: ${e.message}`)
     }
@@ -441,6 +433,8 @@ function App() {
                 setSelectedSubId={setSelectedSubId}
                 pilotSubmarine={pilotSubmarine}
               />
+
+              <SubmarineHistorySection history={subHistory} />
 
               <LogSection logs={logs} clearAll={clearAll} />
             </Stack>

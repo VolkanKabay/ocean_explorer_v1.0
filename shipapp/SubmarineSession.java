@@ -38,7 +38,6 @@ public class SubmarineSession extends Thread {
     private int depth;
     private int distance;
 
-    // Letztes empfangenes Bild für Live-View
     String lastPictureHex;
     long lastPictureTimestamp;
 
@@ -118,6 +117,9 @@ public class SubmarineSession extends Thread {
                 if (submarineId != null) {
                     submarineSessions.remove(submarineId);
                 }
+            }
+            if (submarineRepository != null && submarineId != null) {
+                submarineRepository.updateSubmarineStatus(submarineId, "terminated");
             }
             try {
                 socket.close();

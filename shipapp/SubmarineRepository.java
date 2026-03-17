@@ -114,8 +114,12 @@ public class SubmarineRepository {
     /**
      * Aktualisiert den Status eines Submarines.
      *
+     * Erlaubte Statuswerte im Schema sind nur:
+     * - active
+     * - terminated
+     *
      * @param submarineId ID des Submarines
-     * @param status      neuer Status (z.B. active, crashed, surfaced, terminated)
+     * @param status      neuer Status (z.B. active oder terminated)
      */
     public void updateSubmarineStatus(String submarineId, String status) {
         ensureConnection();
@@ -359,8 +363,8 @@ public class SubmarineRepository {
             System.err.println("Fehler beim Speichern des Crashs: " + e.getMessage());
         }
 
-        // Status aktualisieren
-        updateSubmarineStatus(submarineId, "crashed");
+        // Status aktualisieren: nur noch "active" und "terminated" werden verwendet.
+        updateSubmarineStatus(submarineId, "terminated");
     }
 
     // ========================================================================
@@ -398,8 +402,8 @@ public class SubmarineRepository {
             System.err.println("Fehler beim Speichern des Arise-Events: " + e.getMessage());
         }
 
-        // Status aktualisieren
-        updateSubmarineStatus(submarineId, "surfaced");
+        // Status aktualisieren: nur noch "active" und "terminated" werden verwendet.
+        updateSubmarineStatus(submarineId, "terminated");
     }
 
     // ========================================================================
