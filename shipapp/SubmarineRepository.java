@@ -554,4 +554,56 @@ public class SubmarineRepository {
 
         return result;
     }
+
+    /**
+     * Liefert die letzten N Positionen eines Submarines (für Track/Map Ansicht).
+     *
+     * @param submarineId ID des Submarines
+     * @param limit       maximale Anzahl (z.B. 30)
+     * @return JSONArray mit Objekten (x,y,z,depth,distance,recorded_at) in zeitlich aufsteigender Reihenfolge
+     */
+    public JSONArray getLatestPositions(String submarineId, int limit) {
+        ensureConnection();
+        JSONArray result = new JSONArray();
+        if (connection == null) return result;
+        if (submarineId == null || submarineId.isBlank()) return result;
+
+        int safeLimit = Math.max(1, Math.min(limit, 500));
+
+        String sql = """
+                SELECT pos_x, pos_y, pos_z, depth, distance, recorded_at
+                FROM submarine_positions
+                WHERE submarine_id = ?
+                ORDER BY recorded_at DESC, id DESC
+                LIMIT ?
+                """;
+
+        List<JSONObject> rows = new ArrayList<>();
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, submarineId);
+            stmt.setInt(2, safeLimit);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    JSONObject point = new JSONObject();
+                    point.put("x", rs.getDouble("pos_x"));
+                    point.put("y", rs.getDouble("pos_y"));
+                    point.put("z", rs.getDouble("pos_z"));
+                    point.put("depth", rs.getObject("depth") != null ? rs.getInt("depth") : JSONObject.NULL);
+                    point.put("distance", rs.getObject("distance") != null ? rs.getInt("distance") : JSONObject.NULL);
+                    Timestamp ts = rs.getTimestamp("recorded_at");
+                    point.put("recorded_at", ts != null ? ts.toString() : JSONObject.NULL);
+                    rows.add(point);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Fehler beim Abrufen der letzten Positionen: " + e.getMessage());
+        }
+
+        // Query liefert DESC; für Track-Darstellung lieber ASC (alt -> neu)
+        for (int i = rows.size() - 1; i >= 0; i--) {
+            result.put(rows.get(i));
+        }
+
+        return result;
+    }
 }

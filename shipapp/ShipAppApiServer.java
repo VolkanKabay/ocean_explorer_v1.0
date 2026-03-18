@@ -147,6 +147,7 @@ public class ShipAppApiServer {
         httpServer.createContext("/api/submarine/pilot", new SubPilotHandler());
         httpServer.createContext("/api/submarine/kill", new SubKillHandler());
         httpServer.createContext("/api/submarine/history", new SubHistoryHandler());
+        httpServer.createContext("/api/submarine/positions", new SubPositionsHandler());
         httpServer.createContext("/api/submarine/picture/latest", new SubPictureLatestFileHandler());
         httpServer.createContext("/api/submarine/picture", new SubPictureHandler());
         httpServer.createContext("/api/submarine/measurements", new MeasurementsHandler());
@@ -442,6 +443,71 @@ public class ShipAppApiServer {
             var subs = submarineRepository.getSubmarineOverview();
             JSONObject resp = new JSONObject();
             resp.put("submarines", subs);
+            sendJson(exchange, 200, resp);
+        }
+    }
+
+    /**
+     * Liefert die letzten N Positionen eines Submarines aus der Datenbank.
+     * GET /api/submarine/positions?id=<submarineId>&limit=30
+     *
+     * id ist optional: wenn nicht gesetzt, wird ein aktives Submarine aus der aktuellen Session genommen (falls vorhanden).
+     */
+    private class SubPositionsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(405, -1);
+                return;
+            }
+
+            if (submarineRepository == null) {
+                sendJson(exchange, 500, new JSONObject().put("error", "Datenbank nicht verfügbar"));
+                return;
+            }
+
+            String query = exchange.getRequestURI().getQuery();
+            String submarineId = null;
+            Integer limit = null;
+            if (query != null) {
+                for (String param : query.split("&")) {
+                    String[] pair = param.split("=");
+                    if (pair.length == 2 && "id".equals(pair[0])) {
+                        submarineId = pair[1];
+                    } else if (pair.length == 2 && "limit".equals(pair[0])) {
+                        try {
+                            limit = Integer.parseInt(pair[1]);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            }
+
+            if (submarineId == null || submarineId.isEmpty()) {
+                synchronized (submarineSessions) {
+                    submarineId = submarineSessions.values().stream()
+                            .map(SubmarineSession::getIdSafe)
+                            .findFirst()
+                            .orElse(null);
+                }
+            }
+
+            if (submarineId == null || submarineId.isEmpty()) {
+                sendJson(exchange, 400, new JSONObject().put("error", "no submarine id provided and none active"));
+                return;
+            }
+
+            int safeLimit = limit != null ? limit : 30;
+            JSONArray positions = submarineRepository.getLatestPositions(submarineId, safeLimit);
+            JSONObject resp = new JSONObject();
+            resp.put("submarine_id", submarineId);
+            resp.put("limit", safeLimit);
+            resp.put("count", positions.length());
+            resp.put("positions", positions);
             sendJson(exchange, 200, resp);
         }
     }
@@ -778,6 +844,7 @@ public class ShipAppApiServer {
         private String submarineId;
         private Vec lastPos;
         private Vec lastDir;
+        private Vec lastSavedPos;
         private int depth;
         private int distance;
         private String lastMessageText;
@@ -915,8 +982,25 @@ public class ShipAppApiServer {
 
             if (submarineRepository != null && submarineId != null) {
                 submarineRepository.saveSubmarine(submarineId, shipConnection.getShipId());
-                submarineRepository.savePosition(submarineId, lastPos, lastDir, depth, distance);
+                // Nur echte Bewegung persistieren (Rotation/Dir-Änderung ohne Positionswechsel ignorieren)
+                if (shouldPersistPosition(lastPos)) {
+                    submarineRepository.savePosition(submarineId, lastPos, lastDir, depth, distance);
+                    lastSavedPos = lastPos;
+                }
             }
+        }
+
+        private boolean shouldPersistPosition(Vec pos) {
+            if (pos == null) return false;
+            if (lastSavedPos == null) return true;
+
+            // Jede echte Bewegung tracken; Rotationen liefern i.d.R. gleiche Position.
+            // Wir ignorieren nur exakt gleiche/nahezu gleiche Positionen (Double-Rauschen).
+            final double eps = 1e-6;
+            double dx = pos.getX() - lastSavedPos.getX();
+            double dy = pos.getY() - lastSavedPos.getY();
+            double dz = pos.getZ() - lastSavedPos.getZ();
+            return (Math.abs(dx) > eps) || (Math.abs(dy) > eps) || (Math.abs(dz) > eps);
         }
 
         private void handleSubMessage(JSONObject msg) {
@@ -929,6 +1013,16 @@ public class ShipAppApiServer {
             this.lastMessagePos = pos;
             System.out.printf("Submarine-Message (id=%s, type=%s): %s, pos=%s%n",
                     submarineId, type, text, pos);
+
+            // Viele Submarines schicken Positions-Updates als "message" mit pos.
+            // Für die Track-Map persistieren wir deshalb auch hier (aber nur bei echter Bewegung).
+            if (submarineRepository != null && submarineId != null && pos != null) {
+                this.lastPos = pos;
+                if (shouldPersistPosition(pos)) {
+                    submarineRepository.savePosition(submarineId, pos, lastDir, depth, distance);
+                    lastSavedPos = pos;
+                }
+            }
         }
 
         private void handleMeasure(JSONObject msg) {

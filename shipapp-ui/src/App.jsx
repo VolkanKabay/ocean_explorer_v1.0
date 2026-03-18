@@ -7,6 +7,7 @@ import NavigationSection from './components/NavigationSection.jsx'
 import SubmarinesSection from './components/SubmarinesSection.jsx'
 import PictureSection from './components/PictureSection.jsx'
 import SubmarineHistorySection from './components/SubmarineHistorySection.jsx'
+import SubmarineTrackMapSection from './components/SubmarineTrackMapSection.jsx'
 import LogSection from './components/LogSection.jsx'
 
 const API_BASE = 'http://localhost:8080/api'
@@ -266,7 +267,14 @@ function App() {
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.target.tagName === 'INPUT') return
+      const t = e.target
+      const tag = t?.tagName
+      const isEditable =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        t?.isContentEditable === true
+      if (isEditable) return
       const key = e.key.toLowerCase()
       const hasSub = activeSubs.length > 0
       if (key === 'w') {
@@ -291,12 +299,16 @@ function App() {
           : activeSubs[0].id
 
       if (e.key === 'ArrowUp') {
+        e.preventDefault()
         pilotSubmarine(targetId, 'C')
       } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
         pilotSubmarine(targetId, 'DOWN')
       } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
         pilotSubmarine(targetId, 'W')
       } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
         pilotSubmarine(targetId, 'E')
       } else if (key === 'k') {
         pilotSubmarine(targetId, 'None', 'take_photo')
@@ -432,6 +444,13 @@ function App() {
                 selectedSubId={selectedSubId}
                 setSelectedSubId={setSelectedSubId}
                 pilotSubmarine={pilotSubmarine}
+              />
+
+              <SubmarineTrackMapSection
+                apiGet={apiGet}
+                activeSubs={activeSubs}
+                selectedSubId={selectedSubId}
+                setSelectedSubId={setSelectedSubId}
               />
 
               <SubmarineHistorySection history={subHistory} />
