@@ -1043,7 +1043,6 @@ public class ShipAppApiServer {
 
             if (submarineRepository != null && submarineId != null) {
                 submarineRepository.saveSubmarine(submarineId, shipConnection.getShipId());
-                // Nur echte Bewegung persistieren (Rotation/Dir-Änderung ohne Positionswechsel ignorieren)
                 if (shouldPersistPosition(lastPos)) {
                     submarineRepository.savePosition(submarineId, lastPos, lastDir, depth);
                     lastSavedPos = lastPos;
@@ -1055,8 +1054,7 @@ public class ShipAppApiServer {
             if (pos == null) return false;
             if (lastSavedPos == null) return true;
 
-            // Jede echte Bewegung tracken; Rotationen liefern i.d.R. gleiche Position.
-            // Wir ignorieren nur exakt gleiche/nahezu gleiche Positionen (Double-Rauschen).
+    
             final double eps = 1e-6;
             double dx = pos.getX() - lastSavedPos.getX();
             double dy = pos.getY() - lastSavedPos.getY();
@@ -1075,8 +1073,6 @@ public class ShipAppApiServer {
             System.out.printf("Submarine-Message (id=%s, type=%s): %s, pos=%s%n",
                     submarineId, type, text, pos);
 
-            // Viele Submarines schicken Positions-Updates als "message" mit pos.
-            // Für die Track-Map persistieren wir deshalb auch hier (aber nur bei echter Bewegung).
             if (submarineRepository != null && submarineId != null && pos != null) {
                 this.lastPos = pos;
                 if (shouldPersistPosition(pos)) {
