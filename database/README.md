@@ -45,37 +45,6 @@
 
 - `submarine_overview` - Übersicht aller Submarines mit letzter Position (ohne Messpunkte)
 
-## Wichtige Hinweise / Migrationen
-
-### Entfernung von `distance` (Positions-Telemetrie)
-
-Ab Version, in der `distance` entfernt wurde, enthält `submarine_positions` **keine** Spalte `distance` mehr.
-Wenn du eine bestehende Datenbank migrieren willst, führe Folgendes aus:
-
-```sql
-USE ocean_explorer;
-
-DROP VIEW IF EXISTS submarine_overview;
-
-ALTER TABLE submarine_positions
-  DROP COLUMN distance;
-
-CREATE OR REPLACE VIEW submarine_overview AS
-SELECT 
-    s.id,
-    s.status,
-    s.created_at,
-    s.last_seen,
-    p.pos_x,
-    p.pos_y,
-    p.pos_z,
-    p.depth
-FROM submarines s
-LEFT JOIN submarine_positions p ON s.id = p.submarine_id
-WHERE p.id = (
-    SELECT MAX(id) FROM submarine_positions WHERE submarine_id = s.id
-) OR p.id IS NULL;
-```
 
 ## API-Endpunkte für Datenbank-Abfragen
 
