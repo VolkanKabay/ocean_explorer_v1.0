@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS submarine_positions (
     dir_y DOUBLE,
     dir_z DOUBLE,
     depth INT,
-    distance INT,
     recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (submarine_id) REFERENCES submarines(id) ON DELETE CASCADE,
     INDEX idx_submarine_id (submarine_id),
@@ -98,8 +97,7 @@ SELECT
     p.pos_x,
     p.pos_y,
     p.pos_z,
-    p.depth,
-    p.distance
+    p.depth
 FROM submarines s
 LEFT JOIN submarine_positions p ON s.id = p.submarine_id
 WHERE p.id = (

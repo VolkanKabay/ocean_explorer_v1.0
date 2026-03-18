@@ -13,7 +13,7 @@ function formatPosition(sub) {
 
   return `Letzte Position: [${sub.pos_x.toFixed(1)}, ${sub.pos_y.toFixed(1)}, ${sub.pos_z.toFixed(1)}], Tiefe ${
     sub.depth ?? '?'
-  } m, Distanz ${sub.distance ?? '?'} m`
+  } m`
 }
 
 function SubmarineHistorySection({ history }) {

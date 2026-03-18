@@ -36,7 +36,6 @@ public class SubmarineSession extends Thread {
     private Vec lastPos;
     private Vec lastDir;
     private int depth;
-    private int distance;
 
     String lastPictureHex;
     long lastPictureTimestamp;
@@ -68,7 +67,6 @@ public class SubmarineSession extends Thread {
                     .put("z", lastPos.getZ()));
         }
         jo.put("depth", depth);
-        jo.put("distance", distance);
         jo.put("hasPicture", lastPictureHex != null && !lastPictureHex.isEmpty());
         jo.put("pictureTimestamp", lastPictureTimestamp);
         return jo;
@@ -147,19 +145,18 @@ public class SubmarineSession extends Thread {
         JSONObject posJson = msg.optJSONObject("pos");
         JSONObject dirJson = msg.optJSONObject("dir");
         depth = msg.optInt("depth", -1);
-        distance = msg.optInt("distance", -1);
         lastPos = posJson != null ? Vec.fromJson(posJson) : null;
         lastDir = dirJson != null ? Vec.fromJson(dirJson) : null;
         synchronized (submarineSessions) {
             submarineSessions.put(getIdSafe(), this);
         }
-        System.out.printf("Submarine READY (id=%s): pos=%s, depth=%d, distance=%d%n",
-                submarineId, lastPos, depth, distance);
+        System.out.printf("Submarine READY (id=%s): pos=%s, depth=%d%n",
+                submarineId, lastPos, depth);
 
         if (submarineRepository != null && submarineId != null) {
             String shipId = shipIdSupplier != null ? shipIdSupplier.get() : null;
             submarineRepository.saveSubmarine(submarineId, shipId);
-            submarineRepository.savePosition(submarineId, lastPos, lastDir, depth, distance);
+            submarineRepository.savePosition(submarineId, lastPos, lastDir, depth);
         }
     }
 

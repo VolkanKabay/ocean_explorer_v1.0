@@ -147,16 +147,15 @@ public class SubmarineRepository {
      * @param pos aktuelle Position
      * @param dir aktuelle Richtung (kann null sein)
      * @param depth aktuelle Tiefe
-     * @param distance zurückgelegte Distanz
      */
-    public void savePosition(String submarineId, Vec pos, Vec dir, int depth, int distance) {
+    public void savePosition(String submarineId, Vec pos, Vec dir, int depth) {
         ensureConnection();
         if (connection == null || pos == null) return;
 
         String sql = """
             INSERT INTO submarine_positions 
-            (submarine_id, pos_x, pos_y, pos_z, dir_x, dir_y, dir_z, depth, distance)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (submarine_id, pos_x, pos_y, pos_z, dir_x, dir_y, dir_z, depth)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
@@ -176,7 +175,6 @@ public class SubmarineRepository {
             }
             
             stmt.setInt(8, depth);
-            stmt.setInt(9, distance);
             stmt.executeUpdate();
         } catch (SQLException e) {
             System.err.println("Fehler beim Speichern der Position: " + e.getMessage());
@@ -202,11 +200,9 @@ public class SubmarineRepository {
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             connection.setAutoCommit(false);
 
+            int inserted = 0;
             for (int i = 0; i < vecs.length(); i++) {
-                JSONObject vecJson = vecs.optJSONObject(i);
-                if (vecJson == null) continue;
-
-                Vec vec = Vec.fromJson(vecJson);
+                Vec vec = parseVecFromMeasurement(vecs, i);
                 if (vec == null) continue;
 
                 stmt.setString(1, submarineId);
@@ -214,12 +210,13 @@ public class SubmarineRepository {
                 stmt.setDouble(3, vec.getY());
                 stmt.setDouble(4, vec.getZ());
                 stmt.addBatch();
+                inserted++;
             }
 
             stmt.executeBatch();
             connection.commit();
             connection.setAutoCommit(true);
-            System.out.printf("Submarine %s: %d Messpunkte gespeichert%n", submarineId, vecs.length());
+            System.out.printf("Submarine %s: %d/%d Messpunkte gespeichert%n", submarineId, inserted, vecs.length());
         } catch (SQLException e) {
             System.err.println("Fehler beim Speichern der Messpunkte: " + e.getMessage());
             try {
@@ -229,6 +226,62 @@ public class SubmarineRepository {
                 // ignorieren
             }
         }
+    }
+
+    /**
+     * Unterstützt verschiedene Formate für Messpunkte:
+     * - JSONObject: {"x":..,"y":..,"z":..} oder {"vec":[x,y,z]} oder {"vec3":[x,y,z]} oder {"vec2":[x,y]}
+     * - JSONArray:  [x,y,z] oder [x,y]
+     */
+    private Vec parseVecFromMeasurement(JSONArray vecs, int index) {
+        Object item = vecs.opt(index);
+        if (item == null) return null;
+
+        if (item instanceof JSONObject jo) {
+            // bevorzugt: bestehender Parser
+            Vec v = Vec.fromJson(jo);
+            if (v != null) return v;
+
+            // häufig: direkte x/y/z Felder
+            if (jo.has("x") && jo.has("y") && jo.has("z")) {
+                return new Vec(
+                        (int) Math.round(jo.optDouble("x")),
+                        (int) Math.round(jo.optDouble("y")),
+                        (int) Math.round(jo.optDouble("z"))
+                );
+            }
+
+            // alternative: {"vec":[...]} / {"vec3":[...]} / {"vec2":[...]}
+            JSONArray arr = jo.optJSONArray("vec");
+            if (arr == null) arr = jo.optJSONArray("vec3");
+            if (arr == null) arr = jo.optJSONArray("vec2");
+            if (arr != null && arr.length() >= 2) {
+                if (arr.length() >= 3) {
+                    // passt direkt zur Ocean-JSON-Form "vec":[x,y,z]
+                    Vec vec = Vec.fromJson(arr);
+                    if (vec != null) return vec;
+                }
+                int x = (int) Math.round(arr.optDouble(0));
+                int y = (int) Math.round(arr.optDouble(1));
+                int z = arr.length() >= 3 ? (int) Math.round(arr.optDouble(2)) : 0;
+                return new Vec(x, y, z);
+            }
+            return null;
+        }
+
+        if (item instanceof JSONArray arr) {
+            if (arr.length() < 2) return null;
+            if (arr.length() >= 3) {
+                Vec vec = Vec.fromJson(arr);
+                if (vec != null) return vec;
+            }
+            int x = (int) Math.round(arr.optDouble(0));
+            int y = (int) Math.round(arr.optDouble(1));
+            int z = arr.length() >= 3 ? (int) Math.round(arr.optDouble(2)) : 0;
+            return new Vec(x, y, z);
+        }
+
+        return null;
     }
 
     // ========================================================================
@@ -515,7 +568,7 @@ public class SubmarineRepository {
      * Liefert eine Übersicht aller jemals gespeicherten Submarines inkl. letztem Standort.
      * Verwendet die View submarine_overview aus dem Schema.
      *
-     * @return JSONArray mit Objekten (id, status, created_at, last_seen, pos_x, pos_y, pos_z, depth, distance)
+     * @return JSONArray mit Objekten (id, status, created_at, last_seen, pos_x, pos_y, pos_z, depth)
      */
     public JSONArray getSubmarineOverview() {
         ensureConnection();
@@ -524,7 +577,7 @@ public class SubmarineRepository {
 
         String sql = """
                 SELECT id, status, created_at, last_seen,
-                       pos_x, pos_y, pos_z, depth, distance
+                       pos_x, pos_y, pos_z, depth
                 FROM submarine_overview
                 ORDER BY created_at DESC
                 """;
@@ -544,7 +597,6 @@ public class SubmarineRepository {
                 row.put("pos_y", rs.getObject("pos_y") != null ? rs.getDouble("pos_y") : JSONObject.NULL);
                 row.put("pos_z", rs.getObject("pos_z") != null ? rs.getDouble("pos_z") : JSONObject.NULL);
                 row.put("depth", rs.getObject("depth") != null ? rs.getInt("depth") : JSONObject.NULL);
-                row.put("distance", rs.getObject("distance") != null ? rs.getInt("distance") : JSONObject.NULL);
 
                 result.put(row);
             }
@@ -560,7 +612,7 @@ public class SubmarineRepository {
      *
      * @param submarineId ID des Submarines
      * @param limit       maximale Anzahl (z.B. 30)
-     * @return JSONArray mit Objekten (x,y,z,depth,distance,recorded_at) in zeitlich aufsteigender Reihenfolge
+     * @return JSONArray mit Objekten (x,y,z,depth,recorded_at) in zeitlich aufsteigender Reihenfolge
      */
     public JSONArray getLatestPositions(String submarineId, int limit) {
         ensureConnection();
@@ -571,7 +623,7 @@ public class SubmarineRepository {
         int safeLimit = Math.max(1, Math.min(limit, 500));
 
         String sql = """
-                SELECT pos_x, pos_y, pos_z, depth, distance, recorded_at
+                SELECT pos_x, pos_y, pos_z, depth, recorded_at
                 FROM submarine_positions
                 WHERE submarine_id = ?
                 ORDER BY recorded_at DESC, id DESC
@@ -589,7 +641,6 @@ public class SubmarineRepository {
                     point.put("y", rs.getDouble("pos_y"));
                     point.put("z", rs.getDouble("pos_z"));
                     point.put("depth", rs.getObject("depth") != null ? rs.getInt("depth") : JSONObject.NULL);
-                    point.put("distance", rs.getObject("distance") != null ? rs.getInt("distance") : JSONObject.NULL);
                     Timestamp ts = rs.getTimestamp("recorded_at");
                     point.put("recorded_at", ts != null ? ts.toString() : JSONObject.NULL);
                     rows.add(point);
