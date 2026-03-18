@@ -102,15 +102,35 @@ function App() {
     }
   }, [appendLog])
 
+  const refreshLastScanFromDb = useCallback(async () => {
+    try {
+      const res = await apiGet('/scan/history?limit=1')
+      const scans = Array.isArray(res.scans) ? res.scans : []
+      if (scans.length > 0) {
+        const s = scans[0]
+        setLastScan({
+          depth: s.depth ?? null,
+          stddev: s.stddev ?? null,
+          scanned_at: s.scanned_at ?? null,
+          sector_x: s.sector_x ?? null,
+          sector_y: s.sector_y ?? null,
+        })
+      }
+    } catch (e) {
+      // optional: kein Log-Spam, wenn DB/Endpoint noch nicht verfügbar ist
+    }
+  }, [])
+
   useEffect(() => {
     refreshState()
     refreshSubHistory()
+    refreshLastScanFromDb()
     const id = setInterval(() => {
       refreshState()
       refreshSubHistory()
     }, 2000)
     return () => clearInterval(id)
-  }, [refreshState, refreshSubHistory])
+  }, [refreshLastScanFromDb, refreshState, refreshSubHistory])
 
   const handleLaunch = async () => {
     setIsLaunching(true)

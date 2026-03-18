@@ -87,6 +87,19 @@ CREATE TABLE IF NOT EXISTS submarine_arises (
     INDEX idx_submarine_id (submarine_id)
 );
 
+-- Tabelle für Ship-Scan-Ergebnisse (scan -> depth/stddev)
+CREATE TABLE IF NOT EXISTS ship_scans (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    ship_id VARCHAR(100) NOT NULL,
+    sector_x INT,
+    sector_y INT,
+    depth INT,
+    stddev DOUBLE,
+    scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_ship_id (ship_id),
+    INDEX idx_scanned_at (scanned_at)
+);
+
 -- View für aktuelle Submarine-Übersicht (ohne Ships/Measurements)
 CREATE OR REPLACE VIEW submarine_overview AS
 SELECT 

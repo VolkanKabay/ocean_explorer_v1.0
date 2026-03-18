@@ -39,10 +39,43 @@
 | `submarine_pictures` | Gespeicherte Bilder (Hex-String, Dateipfad) |
 | `submarine_crashes` | Crash-Ereignisse |
 | `submarine_arises` | Auftauch-Ereignisse |
+| `ship_scans` | Scan-Ergebnisse des Ships (Tiefe + Standardabweichung, optional Sektor) |
 
 ### View
 
-- `submarine_overview` - Übersicht aller Submarines mit letzter Position und Messanzahl
+- `submarine_overview` - Übersicht aller Submarines mit letzter Position (ohne Messpunkte)
+
+## Wichtige Hinweise / Migrationen
+
+### Entfernung von `distance` (Positions-Telemetrie)
+
+Ab Version, in der `distance` entfernt wurde, enthält `submarine_positions` **keine** Spalte `distance` mehr.
+Wenn du eine bestehende Datenbank migrieren willst, führe Folgendes aus:
+
+```sql
+USE ocean_explorer;
+
+DROP VIEW IF EXISTS submarine_overview;
+
+ALTER TABLE submarine_positions
+  DROP COLUMN distance;
+
+CREATE OR REPLACE VIEW submarine_overview AS
+SELECT 
+    s.id,
+    s.status,
+    s.created_at,
+    s.last_seen,
+    p.pos_x,
+    p.pos_y,
+    p.pos_z,
+    p.depth
+FROM submarines s
+LEFT JOIN submarine_positions p ON s.id = p.submarine_id
+WHERE p.id = (
+    SELECT MAX(id) FROM submarine_positions WHERE submarine_id = s.id
+) OR p.id IS NULL;
+```
 
 ## API-Endpunkte für Datenbank-Abfragen
 
@@ -70,7 +103,7 @@ SELECT * FROM measurements WHERE submarine_id = 'sub_123' ORDER BY recorded_at;
 -- Gesamtzahl der Messpunkte
 SELECT COUNT(*) FROM measurements;
 
--- Submarine-Übersicht mit Statistiken
+-- Submarine-Übersicht (letzte Position pro Submarine)
 SELECT * FROM submarine_overview;
 ```
 

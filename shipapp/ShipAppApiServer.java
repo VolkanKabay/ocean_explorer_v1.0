@@ -142,6 +142,7 @@ public class ShipAppApiServer {
         httpServer.createContext("/api/launch", new LaunchHandler());
         httpServer.createContext("/api/navigate", new NavigateHandler());
         httpServer.createContext("/api/scan", new ScanHandler());
+        httpServer.createContext("/api/scan/history", new ScanHistoryHandler());
         httpServer.createContext("/api/radar", new RadarHandler());
         httpServer.createContext("/api/submarine/start", new SubStartHandler());
         httpServer.createContext("/api/submarine/pilot", new SubPilotHandler());
@@ -315,6 +316,72 @@ public class ShipAppApiServer {
             JSONObject resp = new JSONObject();
             resp.put("depth", depth != null ? depth : JSONObject.NULL);
             resp.put("stddev", stddev != null ? stddev : JSONObject.NULL);
+
+            if (submarineRepository != null) {
+                try {
+                    String shipId = shipConnection.getShipId();
+                    Vec2D sector = shipConnection.getCurrentSector();
+                    submarineRepository.saveShipScan(shipId, sector, depth, stddev);
+                } catch (Exception e) {
+                    System.err.println("Scan persistieren fehlgeschlagen: " + e.getMessage());
+                }
+            }
+
+            sendJson(exchange, 200, resp);
+        }
+    }
+
+    /**
+     * Liefert gespeicherte Scan-Ergebnisse aus der Datenbank.
+     * GET /api/scan/history?shipId=<shipId>&limit=50
+     *
+     * shipId ist optional: wenn nicht gesetzt, wird die aktuelle Ship-ID verwendet.
+     */
+    private class ScanHistoryHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptions(exchange);
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(405, -1);
+                return;
+            }
+
+            if (submarineRepository == null) {
+                sendJson(exchange, 500, new JSONObject().put("error", "Datenbank nicht verfügbar"));
+                return;
+            }
+
+            String query = exchange.getRequestURI().getQuery();
+            String shipId = null;
+            Integer limit = null;
+            if (query != null) {
+                for (String param : query.split("&")) {
+                    String[] pair = param.split("=");
+                    if (pair.length == 2 && "shipId".equals(pair[0])) {
+                        shipId = pair[1];
+                    } else if (pair.length == 2 && "limit".equals(pair[0])) {
+                        try {
+                            limit = Integer.parseInt(pair[1]);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            }
+
+            if (shipId == null || shipId.isEmpty()) {
+                shipId = shipConnection.getShipId();
+            }
+
+            int safeLimit = limit != null ? limit : 50;
+            JSONArray scans = submarineRepository.getLatestShipScans(shipId, safeLimit);
+            JSONObject resp = new JSONObject();
+            resp.put("ship_id", shipId != null ? shipId : JSONObject.NULL);
+            resp.put("limit", safeLimit);
+            resp.put("count", scans.length());
+            resp.put("scans", scans);
             sendJson(exchange, 200, resp);
         }
     }
@@ -687,7 +754,6 @@ public class ShipAppApiServer {
                 return;
             }
 
-            // Schiff abmelden
             String shipId = shipConnection.getShipId();
             if (shipId != null) {
                 try {
@@ -702,7 +768,6 @@ public class ShipAppApiServer {
             shipConnection.resetScan();
             shipConnection.resetRadar();
 
-            // alle Submarines trennen
             synchronized (submarineSessions) {
                 for (SubmarineSession s : submarineSessions.values()) {
                     s.kill();
@@ -710,7 +775,6 @@ public class ShipAppApiServer {
                 submarineSessions.clear();
             }
 
-            // bestehende Verbindung zum Ocean-Server neu aufbauen
             try {
                 shipConnection.connect(oceanHost, oceanShipPort);
             } catch (IOException e) {

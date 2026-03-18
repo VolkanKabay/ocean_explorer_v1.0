@@ -19,6 +19,7 @@ import java.util.List;
  * - Bilder (submarine_pictures)
  * - Crash-Ereignisse (submarine_crashes)
  * - Auftauchen-Ereignisse (submarine_arises)
+ * - Ship-Scan-Ergebnisse (ship_scans)
  */
 public class SubmarineRepository {
 
@@ -457,6 +458,101 @@ public class SubmarineRepository {
 
         // Status aktualisieren: nur noch "active" und "terminated" werden verwendet.
         updateSubmarineStatus(submarineId, "terminated");
+    }
+
+    // ========================================================================
+    // Ship-Scans (scan depth/stddev)
+    // ========================================================================
+
+    /**
+     * Speichert ein Scan-Ergebnis des Ships (depth/stddev).
+     *
+     * @param shipId  Ship-ID (falls null/leer wird "unknown" genutzt)
+     * @param sector  aktueller Sektor (kann null sein)
+     * @param depth   gemessene Tiefe (kann null sein)
+     * @param stddev  Standardabweichung (kann null sein)
+     */
+    public void saveShipScan(String shipId, Vec2D sector, Integer depth, Double stddev) {
+        ensureConnection();
+        if (connection == null) return;
+
+        String sql = """
+            INSERT INTO ship_scans (ship_id, sector_x, sector_y, depth, stddev)
+            VALUES (?, ?, ?, ?, ?)
+            """;
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, (shipId != null && !shipId.isBlank()) ? shipId : "unknown");
+
+            if (sector != null) {
+                stmt.setInt(2, sector.getX());
+                stmt.setInt(3, sector.getY());
+            } else {
+                stmt.setNull(2, Types.INTEGER);
+                stmt.setNull(3, Types.INTEGER);
+            }
+
+            if (depth != null) {
+                stmt.setInt(4, depth);
+            } else {
+                stmt.setNull(4, Types.INTEGER);
+            }
+
+            if (stddev != null) {
+                stmt.setDouble(5, stddev);
+            } else {
+                stmt.setNull(5, Types.DOUBLE);
+            }
+
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            System.err.println("Fehler beim Speichern des Ship-Scans: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Gibt die letzten N Scan-Ergebnisse eines Ships zurück (neu -> alt).
+     *
+     * @param shipId Ship-ID (wenn null/leer, wird nach "unknown" gefiltert)
+     * @param limit  max. Anzahl
+     */
+    public JSONArray getLatestShipScans(String shipId, int limit) {
+        ensureConnection();
+        JSONArray result = new JSONArray();
+        if (connection == null) return result;
+
+        int safeLimit = Math.max(1, Math.min(limit, 500));
+        String safeShipId = (shipId != null && !shipId.isBlank()) ? shipId : "unknown";
+
+        String sql = """
+            SELECT ship_id, sector_x, sector_y, depth, stddev, scanned_at
+            FROM ship_scans
+            WHERE ship_id = ?
+            ORDER BY scanned_at DESC, id DESC
+            LIMIT ?
+            """;
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, safeShipId);
+            stmt.setInt(2, safeLimit);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    JSONObject row = new JSONObject();
+                    row.put("ship_id", rs.getString("ship_id"));
+                    row.put("sector_x", rs.getObject("sector_x") != null ? rs.getInt("sector_x") : JSONObject.NULL);
+                    row.put("sector_y", rs.getObject("sector_y") != null ? rs.getInt("sector_y") : JSONObject.NULL);
+                    row.put("depth", rs.getObject("depth") != null ? rs.getInt("depth") : JSONObject.NULL);
+                    row.put("stddev", rs.getObject("stddev") != null ? rs.getDouble("stddev") : JSONObject.NULL);
+                    Timestamp ts = rs.getTimestamp("scanned_at");
+                    row.put("scanned_at", ts != null ? ts.toString() : JSONObject.NULL);
+                    result.put(row);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Fehler beim Abrufen der Ship-Scans: " + e.getMessage());
+        }
+
+        return result;
     }
 
     // ========================================================================
